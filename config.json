@@ -1,0 +1,9 @@
+{
+    "kobold_port": 5001,
+    "max_length": 250,
+    "temperature": 0.15,
+    "min_p": 0.1,
+    "top_p": 0.95,
+    "rep_pen": 1.0,
+    "stop_sequences": []
+}
