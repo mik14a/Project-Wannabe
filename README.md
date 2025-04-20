@@ -1,10 +1,10 @@
 # Project Wannabe
 
-**Project Wannabe** は、カスタム大規模言語モデル (LLM) **「wanabi 24B」** を活用するために特化して設計された、小説執筆支援デスクトップアプリケーションです。
+**Project Wannabe** は、カスタム大規模言語モデル (LLM) **「wanabi 24B」** ([wanabi 24B モデルへのリンク (Hugging Face - 要更新)]) を活用するために特化して設計された、小説執筆支援デスクトップアプリケーションです。
 
 ## 🎯 目的とコンセプト
 
-このアプリケーションは、Mistral Small 3 Base (24B) をベースに、「小説家になろう」のデータセット等を用いて独自にファインチューニングされた **「wanabi 24B」モデル** の持つ、**小説生成に関する特有の能力**を最大限に引き出すことを目的としています。
+このアプリケーションは、Mistral Small 3 Base (24B) をベースに、「小説家になろう」のデータセット等を用いて独自にファインチューニングされた **「wanabi 24B」モデル** ([wanabi 24B モデルへのリンク (Hugging Face - 要更新)]) の持つ、**小説生成に関する特有の能力**を最大限に引き出すことを目的としています。
 
 「wanabi 24B」は、特定の指示形式（Instruction Tuning）に基づいて、小説のアイデア出し、設定に基づいた本文生成、そして文脈に沿った続きの生成を得意とします。Project Wannabe は、このモデルとの最適な対話インターフェースを提供することで、ユーザーの執筆プロセスを強力にサポートします。
 
@@ -19,7 +19,7 @@
 
 Project Wannabe は、「wanabi 24B」モデルのための**専用フロントエンド**として機能し、モデルのポテンシャルを最大限に発揮させることで、ユーザーの創造性を刺激し、より質の高い作品作りを支援することを目指しています。
 
-**前提:** このアプリケーションを使用するには、別途 **KoboldCpp** をローカル環境で起動し、**「wanabi 24B」モデル**（または互換性のある GGUF 形式のモデル）をロードしておく必要があります。
+**前提:** このアプリケーションを使用するには、別途 **KoboldCpp** ([https://github.com/LostRuins/koboldcpp](https://github.com/LostRuins/koboldcpp)) をローカル環境で起動し、**「wanabi 24B」モデル** ([wanabi 24B モデルへのリンク (Hugging Face - 要更新)])（または互換性のある GGUF 形式のモデル）をロードしておく必要があります。
 
 ## 🚀 主な機能 (Features)
 
@@ -111,7 +111,7 @@ Project Wannabe は、「wanabi 24B」モデルのための**専用フロント�
 
 *   **Python:** 3.9 以上
 *   **Git:** ソースコードから実行する場合に必要です。
-*   **KoboldCpp:** ローカル環境で別途起動し、**「wanabi 24B」モデル (GGUF形式)** または互換性のあるモデルをロードしている必要があります。
+*   **KoboldCpp:** ローカル環境で別途起動し、**「wanabi 24B」モデル (GGUF形式)** ([wanabi 24B モデルへのリンク (Hugging Face - 要更新)]) または互換性のあるモデルをロードしている必要があります。 ([https://github.com/LostRuins/koboldcpp](https://github.com/LostRuins/koboldcpp))
 
 ### インストール手順
 
