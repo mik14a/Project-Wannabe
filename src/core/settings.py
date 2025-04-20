@@ -28,16 +28,17 @@ def load_settings() -> Dict[str, Any]:
         if os.path.exists(config_path):
             with open(config_path, 'r', encoding='utf-8') as f:
                 loaded_settings = json.load(f)
-                # Update defaults with loaded values, ensuring keys exist
-                for key in DEFAULT_SETTINGS:
-                    if key in loaded_settings:
-                        # Basic type validation (can be expanded)
-                        if isinstance(loaded_settings[key], type(DEFAULT_SETTINGS[key])):
-                            settings[key] = loaded_settings[key]
-                        else:
-                            print(f"Warning: Type mismatch for setting '{key}' in {CONFIG_FILE}. Using default.")
-                    else:
-                         print(f"Warning: Setting '{key}' not found in {CONFIG_FILE}. Using default.")
+                # *** FIX: Update defaults with loaded settings, preserving all keys from file ***
+                settings.update(loaded_settings) # Overwrite defaults with any values found in the file
+
+                # Optional: Add validation here if needed, e.g., check types for known keys
+                # for key, value in loaded_settings.items():
+                #     if key in DEFAULT_SETTINGS and not isinstance(value, type(DEFAULT_SETTINGS[key])):
+                #         print(f"Warning: Type mismatch for setting '{key}' in {CONFIG_FILE}. Using loaded value anyway.")
+                #         settings[key] = value # Keep loaded value despite type mismatch for flexibility
+                #     elif key not in DEFAULT_SETTINGS:
+                #         # Handle unknown keys if necessary (e.g., print warning, ignore, or keep)
+                #         settings[key] = value # Keep unknown keys like font_family, font_size
 
     except (json.JSONDecodeError, IOError) as e:
         print(f"Error loading {CONFIG_FILE}: {e}. Using default settings.")

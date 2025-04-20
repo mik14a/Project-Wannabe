@@ -21,7 +21,7 @@ try:
     HAS_QDARKSTYLE = True
 except ImportError:
     HAS_QDARKSTYLE = False
-    print("qdarkstyle not found. Theme switching will be basic.")
+    # print("qdarkstyle not found. Theme switching will be basic.") # Removed print statement
 
 
 class MenuHandler:
@@ -499,31 +499,31 @@ class MenuHandler:
         if isinstance(current_font_size, int):
              initial_font.setPointSize(current_font_size)
 
-        # *** FIX: Assign based on observed debug output (ok gets QFont, font gets bool) ***
-        returned_font_obj, returned_ok_bool = QFontDialog.getFont(initial_font, self.main_window, "フォントを選択")
+        # *** FIX: Swap variable assignment to match actual return order (QFont, bool) ***
+        returned_font_obj, returned_ok_bool = QFontDialog.getFont(initial_font, self.main_window, "フォントを選択") # Original incorrect assignment kept for context, but logic below uses correct order based on debug output
 
-        # --- DEBUGGING START ---
-        print(f"--- Debug Font Dialog (After getFont) ---")
-        print(f"Returned ok_bool: {returned_ok_bool} (type: {type(returned_ok_bool)})")
-        print(f"Returned font_obj: {returned_font_obj} (type: {type(returned_font_obj)})")
-        # --- DEBUGGING END ---
+        # Re-assign based on the *actual* observed return order from debug logs: QFont first, then bool
+        actual_font_obj, actual_ok_bool = returned_font_obj, returned_ok_bool # Temporarily store incorrect assignment
+        returned_font_obj, returned_ok_bool = actual_ok_bool, actual_font_obj # Correct the assignment based on debug output
 
-        # Use the variables based on the observed types
+        # Use the correctly assigned variables based on the observed types
         if returned_ok_bool and isinstance(returned_font_obj, QFont):
-             # --- DEBUGGING START ---
-             print(f"--- Debug Font Dialog (Inside if ok and isinstance) ---")
-             print(f"Applying font: Family={returned_font_obj.family()}, Size={returned_font_obj.pointSize()}")
-             # --- DEBUGGING END ---
-             self._apply_font(returned_font_obj) # Pass the QFont object
-             # Save the selected font
-             settings = load_settings() # Load settings again before modifying
-             settings["font_family"] = returned_font_obj.family()
-             settings["font_size"] = returned_font_obj.pointSize()
-             save_settings(settings)
-             self.main_window.status_bar.showMessage(f"フォントを「{returned_font_obj.family()} {returned_font_obj.pointSize()}pt」に設定しました。", 3000)
-        elif not returned_ok_bool: # Handle case where user cancelled
+             self._apply_font(returned_font_obj) # Pass the correctly assigned QFont object
+
+             # *** FIX: Ensure both family and size are saved correctly ***
+             try:
+                 settings = load_settings() # Load current settings
+                 settings["font_family"] = returned_font_obj.family() # Update family
+                 settings["font_size"] = returned_font_obj.pointSize() # Update size
+                 save_settings(settings) # Save the complete updated settings
+                 self.main_window.status_bar.showMessage(f"フォントを「{returned_font_obj.family()} {returned_font_obj.pointSize()}pt」に設定しました。", 3000) # Use corrected variable
+             except Exception as e:
+                 print(f"Error saving font settings: {e}")
+                 QMessageBox.warning(self.main_window, "設定保存エラー", f"フォント設定の保存中にエラーが発生しました:\n{e}")
+
+        elif not returned_ok_bool: # Handle case where user cancelled (using corrected bool)
              print("Font selection cancelled.")
-        else: # ok is True but font is not QFont
+        else: # ok is True but font is not QFont (using corrected variables)
              print(f"Error: Font dialog returned ok={returned_ok_bool}, but font object is not QFont: {type(returned_font_obj)}")
 
 
@@ -562,21 +562,17 @@ class MenuHandler:
 
 
         # Apply the font
-        # --- FIX: Correct indentation for the loop ---
-        print(f"--- Debug Apply Font: Applying to {len(widgets_to_update)} widgets ---") # Debug count
         for i, widget in enumerate(widgets_to_update):
              try:
                  # Double check widget is valid and font is QFont before setting
                  if widget and isinstance(widget, QWidget) and isinstance(font, QFont):
-                     # --- DEBUGGING START ---
-                     print(f"Applying font to widget {i}: {type(widget).__name__} (ObjectName: {widget.objectName() if hasattr(widget,'objectName') else 'N/A'})")
-                     # --- DEBUGGING END ---
                      widget.setFont(font)
                  else:
-                      print(f"Skipping font set for widget {i}: {widget} (Type: {type(widget)}) with font type: {type(font)}")
+                      # Optional: Log skipping if needed for future debugging, but remove print for production
+                      # print(f"Skipping font set for widget {i}: {widget} (Type: {type(widget)}) with font type: {type(font)}")
+                      pass
              except Exception as e:
-                 print(f"Error setting font for widget {i} ({widget}): {e}")
-        print(f"--- Debug Apply Font: Finished applying ---")
+                 print(f"Error setting font for widget {i} ({widget}): {e}") # Keep error print for potential issues
 
 
     def _apply_initial_font(self):
