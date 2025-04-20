@@ -5,9 +5,10 @@ import re # Import regex module
 from PySide6.QtWidgets import (QApplication, QMainWindow, QMenuBar, QStatusBar,
                                QSplitter, QTextEdit, QWidget, QVBoxLayout, QHBoxLayout,
                                QTabWidget, QScrollArea, QLineEdit, QPushButton, QMessageBox,
-                               QPlainTextEdit, QToolBar, QDialog) # Add QDialog
+                               QPlainTextEdit, QToolBar, QDialog, QLineEdit, # Add QLineEdit
+                               QPlainTextEdit) # Ensure QPlainTextEdit is imported
 from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QTextCursor, QAction, QActionGroup
+from PySide6.QtGui import QTextCursor, QAction, QActionGroup, QFont # Add QFont
 
 # Correctly import custom widgets and other modules
 from src.ui.widgets import CollapsibleSection, TagWidget
@@ -15,6 +16,7 @@ from src.ui.dialogs import KoboldConfigDialog, GenerationParamsDialog
 from src.core.kobold_client import KoboldClient, KoboldClientError
 from src.core.prompt_builder import build_prompt
 from src.core.settings import load_settings # To get initial settings if needed
+from src.ui.menu_handler import MenuHandler # Import the new MenuHandler
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -30,55 +32,23 @@ class MainWindow(QMainWindow):
         self.current_mode = "generate" # Initial mode: "generate" or "idea"
         self.infinite_generation_prompt = "" # Store prompt for infinite loop
 
-        self._create_menu_bar()
-        self._create_toolbar() # Add Toolbar creation
-        self._create_status_bar()
-        self._create_central_widget()
+        # Instantiate MenuHandler
+        self.menu_handler = MenuHandler(self)
 
-        # Cleanup connection will be handled by qasync loop setup
+        # Create UI elements
+        self._create_toolbar() # Create toolbar first
+        self._create_status_bar()
+        self._create_central_widget() # Create central widget before menu bar needs it
+        self._create_menu_bar() # Create menu bar using the handler
+
+        # Apply initial theme and font from settings via MenuHandler
+        # These might be called within MenuHandler's creation logic already
+        # self.menu_handler._apply_initial_font() # Ensure initial font is applied
+        # self.menu_handler._apply_theme(load_settings().get("theme", "light")) # Ensure initial theme
 
     def _create_menu_bar(self):
-        menu_bar = self.menuBar()
-        # --- File Menu ---
-        file_menu = menu_bar.addMenu("ファイル(&F)") # Japanese
-        placeholder_file = file_menu.addAction("(未実装)")
-        placeholder_file.setEnabled(False)
-
-        # --- Edit Menu ---
-        edit_menu = menu_bar.addMenu("編集(&E)") # Japanese
-        placeholder_edit = edit_menu.addAction("(未実装)")
-        placeholder_edit.setEnabled(False)
-
-        # --- View Menu ---
-        view_menu = menu_bar.addMenu("表示(&V)") # Japanese
-        placeholder_view = view_menu.addAction("(未実装)")
-        placeholder_view.setEnabled(False)
-
-        # --- Generate Menu ---
-        generate_menu = menu_bar.addMenu("生成(&G)") # Use Japanese & Mnemonic
-
-        # Single Generation Action
-        self.single_gen_action = generate_menu.addAction("単発生成 (Ctrl+G)")
-        self.single_gen_action.setShortcut("Ctrl+G")
-        self.single_gen_action.triggered.connect(self._trigger_single_generation)
-
-        # Infinite Generation Action
-        self.infinite_gen_action = generate_menu.addAction("無限生成 開始/停止 (F5)")
-        self.infinite_gen_action.setShortcut("F5")
-        self.infinite_gen_action.setCheckable(True)
-        self.infinite_gen_action.triggered.connect(self._toggle_infinite_generation)
-
-        # --- Settings Menu ---
-        settings_menu = menu_bar.addMenu("設定(&S)") # Japanese & Mnemonic
-        kobold_config_action = settings_menu.addAction("KoboldCpp 設定...") # Japanese
-        gen_params_action = settings_menu.addAction("生成パラメータ設定...") # Japanese
-        kobold_config_action.triggered.connect(self._open_kobold_config_dialog)
-        gen_params_action.triggered.connect(self._open_gen_params_dialog)
-
-        # --- Help Menu ---
-        help_menu = menu_bar.addMenu("ヘルプ(&H)") # Japanese
-        placeholder_help = help_menu.addAction("バージョン情報 (未実装)")
-        placeholder_help.setEnabled(False)
+        """Creates the menu bar using MenuHandler."""
+        self.setMenuBar(self.menu_handler.create_menu_bar())
 
     def _create_toolbar(self):
         """Creates the main toolbar for mode switching."""
