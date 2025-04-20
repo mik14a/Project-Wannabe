@@ -6,6 +6,10 @@
     "top_p": 0.95,
     "rep_pen": 1.0,
     "stop_sequences": [],
+    "infinite_generation_behavior": {
+        "idea": "immediate",
+        "generate": "immediate"
+    },
     "font_family": "ＭＳ Ｐ明朝",
     "font_size": 12
 }

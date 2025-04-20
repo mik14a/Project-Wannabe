@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
                                QDoubleSpinBox, QTextEdit, QFormLayout,
-                               QDialogButtonBox, QWidget)
+                               QDialogButtonBox, QWidget, QGroupBox, QRadioButton) # Add QGroupBox, QRadioButton
 from src.core.settings import load_settings, save_settings, DEFAULT_SETTINGS
 
 class KoboldConfigDialog(QDialog):
@@ -103,6 +103,42 @@ class GenerationParamsDialog(QDialog):
         main_layout.addWidget(stop_seq_label)
         main_layout.addWidget(self.stop_seq_edit)
 
+        # --- Infinite Generation Behavior Settings ---
+        inf_gen_group = QGroupBox("無限生成中のプロンプト更新")
+        inf_gen_layout = QVBoxLayout(inf_gen_group)
+
+        # Idea Mode Behavior
+        idea_group = QGroupBox("アイデア出しモード時")
+        idea_layout = QHBoxLayout(idea_group)
+        self.idea_immediate_radio = QRadioButton("詳細情報の変更を即時反映")
+        self.idea_manual_radio = QRadioButton("生成停止/再開まで変更を反映しない (手動)")
+        idea_layout.addWidget(self.idea_immediate_radio)
+        idea_layout.addWidget(self.idea_manual_radio)
+        inf_gen_layout.addWidget(idea_group)
+
+        # Generate Mode Behavior
+        gen_group = QGroupBox("小説生成モード時")
+        gen_layout = QHBoxLayout(gen_group)
+        self.gen_immediate_radio = QRadioButton("詳細情報/本文の変更を即時反映")
+        self.gen_manual_radio = QRadioButton("生成停止/再開まで変更を反映しない (手動)")
+        gen_layout.addWidget(self.gen_immediate_radio)
+        gen_layout.addWidget(self.gen_manual_radio)
+        inf_gen_layout.addWidget(gen_group)
+
+        main_layout.addWidget(inf_gen_group)
+
+        # Load initial state for radio buttons
+        inf_gen_behavior = self.current_settings.get("infinite_generation_behavior", DEFAULT_SETTINGS["infinite_generation_behavior"])
+        if inf_gen_behavior.get("idea", "manual") == "immediate":
+            self.idea_immediate_radio.setChecked(True)
+        else:
+            self.idea_manual_radio.setChecked(True)
+
+        if inf_gen_behavior.get("generate", "manual") == "immediate":
+            self.gen_immediate_radio.setChecked(True)
+        else:
+            self.gen_manual_radio.setChecked(True)
+
         # Dialog buttons
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         button_box.accepted.connect(self.accept)
@@ -121,6 +157,12 @@ class GenerationParamsDialog(QDialog):
         stop_sequences_text = self.stop_seq_edit.toPlainText()
         stop_sequences_list = [line.strip() for line in stop_sequences_text.splitlines() if line.strip()]
         self.current_settings["stop_sequences"] = stop_sequences_list
+
+        # Save infinite generation behavior settings
+        inf_gen_behavior = self.current_settings.get("infinite_generation_behavior", {})
+        inf_gen_behavior["idea"] = "immediate" if self.idea_immediate_radio.isChecked() else "manual"
+        inf_gen_behavior["generate"] = "immediate" if self.gen_immediate_radio.isChecked() else "manual"
+        self.current_settings["infinite_generation_behavior"] = inf_gen_behavior
 
         save_settings(self.current_settings)
         super().accept()

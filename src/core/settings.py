@@ -10,7 +10,11 @@ DEFAULT_SETTINGS = {
     "min_p": 0.1,
     "top_p": 0.95,
     "rep_pen": 1.0,
-    "stop_sequences": ["[INST]", "[/INST]"] # Default stop sequences
+    "stop_sequences": ["[INST]", "[/INST]"], # Default stop sequences
+    "infinite_generation_behavior": { # Add new setting for infinite generation behavior
+        "idea": "manual", # "immediate" or "manual"
+        "generate": "manual" # "immediate" or "manual"
+    }
 }
 
 def get_config_path() -> str:

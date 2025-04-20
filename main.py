@@ -15,7 +15,7 @@ from src.ui.widgets import CollapsibleSection, TagWidget
 from src.ui.dialogs import KoboldConfigDialog, GenerationParamsDialog
 from src.core.kobold_client import KoboldClient, KoboldClientError
 from src.core.prompt_builder import build_prompt
-from src.core.settings import load_settings # To get initial settings if needed
+from src.core.settings import load_settings, DEFAULT_SETTINGS # Import DEFAULT_SETTINGS
 from src.ui.menu_handler import MenuHandler # Import the new MenuHandler
 
 class MainWindow(QMainWindow):
@@ -271,6 +271,7 @@ class MainWindow(QMainWindow):
         self.generation_status = "infinite_running"
         self._update_ui_for_generation_start()
 
+        # Initial prompt build (might be overwritten in loop if immediate update is on)
         main_text = self.main_text_edit.toPlainText()
         metadata = self._get_metadata_from_ui()
         self.infinite_generation_prompt = build_prompt(self.current_mode, main_text, metadata)
@@ -353,18 +354,37 @@ class MainWindow(QMainWindow):
             self.generation_task = None
 
     async def _run_infinite_generation_loop(self):
-        """Continuously generates text using the stored prompt."""
-        if not self.infinite_generation_prompt:
-            print("Error: Infinite generation prompt is empty.")
-            self._stop_current_generation()
-            return
+        """Continuously generates text, potentially rebuilding the prompt based on settings."""
+        # Load behavior setting based on current mode
+        settings = load_settings()
+        inf_gen_behavior = settings.get("infinite_generation_behavior", DEFAULT_SETTINGS["infinite_generation_behavior"])
+        behavior_key = self.current_mode # "idea" or "generate"
+        update_behavior = inf_gen_behavior.get(behavior_key, "manual") # Default to manual
+
+        # Use the initially built prompt if behavior is manual
+        current_prompt = self.infinite_generation_prompt
+        if not current_prompt and update_behavior == "manual":
+             print("Error: Initial infinite generation prompt is empty and behavior is manual.")
+             self._stop_current_generation()
+             return
 
         try:
             while self.generation_status == "infinite_running":
+                # --- Rebuild prompt if behavior is 'immediate' ---
+                if update_behavior == "immediate":
+                    main_text = self.main_text_edit.toPlainText()
+                    metadata = self._get_metadata_from_ui()
+                    current_prompt = build_prompt(self.current_mode, main_text, metadata)
+                    if not current_prompt:
+                         print("Warning: Rebuilt prompt for immediate update is empty. Skipping generation cycle.")
+                         await asyncio.sleep(0.5) # Avoid busy-waiting
+                         continue # Skip this generation cycle
+
+                # --- Generate using the current_prompt ---
                 separator = f"\n--- 生成ブロック {self.output_block_counter} ---\n"
                 self._append_to_output(separator)
                 try:
-                    async for token in self.kobold_client.generate_stream(self.infinite_generation_prompt):
+                    async for token in self.kobold_client.generate_stream(current_prompt):
                         if self.generation_status != "infinite_running":
                             raise asyncio.CancelledError("Infinite generation stopped during stream.")
                         self._append_to_output(token)
