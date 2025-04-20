@@ -21,7 +21,7 @@ from src.ui.menu_handler import MenuHandler # Import the new MenuHandler
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Project Wannabe (仮称)")
+        self.setWindowTitle("Project Wannabe") # "(仮称)" を削除
         self.setGeometry(100, 100, 1200, 800)
 
         self.kobold_client = KoboldClient()
