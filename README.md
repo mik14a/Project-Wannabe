@@ -19,7 +19,7 @@
 
 Project Wannabe は、「wanabi 24B」モデルのための**専用フロントエンド**として機能し、モデルのポテンシャルを最大限に発揮させることで、ユーザーの創造性を刺激し、より質の高い作品作りを支援することを目指しています。
 
-**前提:** このアプリケーションを使用するには、別途 **KoboldCpp** ([https://github.com/LostRuins/koboldcpp](https://github.com/LostRuins/koboldcpp)) をローカル環境で起動し、**「wanabi 24B」モデル** ([wanabi 24B モデルへのリンク (Hugging Face - 要更新)])（または互換性のある GGUF 形式のモデル）をロードしておく必要があります。
+**前提:** このアプリケーションを使用するには、別途 **[KoboldCpp](https://github.com/LostRuins/koboldcpp)** をローカル環境で起動し、**[「wanabi 24B」モデル]([wanabi 24B モデルへのリンク (Hugging Face - 要更新)])**（または互換性のある GGUF 形式のモデル）をロードしておく必要があります。
 
 ## 🚀 主な機能 (Features)
 
@@ -111,7 +111,7 @@ Project Wannabe は、「wanabi 24B」モデルのための**専用フロント�
 
 *   **Python:** 3.9 以上
 *   **Git:** ソースコードから実行する場合に必要です。
-*   **KoboldCpp:** ローカル環境で別途起動し、**「wanabi 24B」モデル (GGUF形式)** ([wanabi 24B モデルへのリンク (Hugging Face - 要更新)]) または互換性のあるモデルをロードしている必要があります。 ([https://github.com/LostRuins/koboldcpp](https://github.com/LostRuins/koboldcpp))
+*   **KoboldCpp:** ローカル環境で別途起動し、**[「wanabi 24B」モデル (GGUF形式)]([wanabi 24B モデルへのリンク (Hugging Face - 要更新)])** または互換性のあるモデルをロードしている必要があります。 ([KoboldCpp](https://github.com/LostRuins/koboldcpp))
 
 ### インストール手順
 
