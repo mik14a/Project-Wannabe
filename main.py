@@ -1,7 +1,5 @@
 import sys
 import asyncio
-import sys
-import asyncio
 import qasync # Import qasync
 import re # Import regex module
 from PySide6.QtWidgets import (QApplication, QMainWindow, QMenuBar, QStatusBar,
@@ -25,10 +23,12 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 1200, 800)
 
         self.kobold_client = KoboldClient()
-        self.is_generating = False
-        self.generation_task = None
+        # Generation status: "idle", "single_running", "infinite_running"
+        self.generation_status = "idle"
+        self.generation_task = None # Holds the asyncio task for generation
         self.output_block_counter = 1
         self.current_mode = "generate" # Initial mode: "generate" or "idea"
+        self.infinite_generation_prompt = "" # Store prompt for infinite loop
 
         self._create_menu_bar()
         self._create_toolbar() # Add Toolbar creation
@@ -43,58 +43,59 @@ class MainWindow(QMainWindow):
         file_menu = menu_bar.addMenu("ファイル(&F)") # Japanese
         placeholder_file = file_menu.addAction("(未実装)")
         placeholder_file.setEnabled(False)
-        # Add actual actions later
 
         # --- Edit Menu ---
         edit_menu = menu_bar.addMenu("編集(&E)") # Japanese
         placeholder_edit = edit_menu.addAction("(未実装)")
         placeholder_edit.setEnabled(False)
-        # Add actual actions later (or rely on QTextEdit defaults)
 
         # --- View Menu ---
         view_menu = menu_bar.addMenu("表示(&V)") # Japanese
         placeholder_view = view_menu.addAction("(未実装)")
         placeholder_view.setEnabled(False)
-        # Add actual actions later
 
         # --- Generate Menu ---
         generate_menu = menu_bar.addMenu("生成(&G)") # Use Japanese & Mnemonic
-        self.start_stop_action = generate_menu.addAction("生成 開始/停止 (F5)") # Japanese
-        self.start_stop_action.setShortcut("F5")
-        self.start_stop_action.triggered.connect(self._toggle_generation) # Connect action
-        self.start_stop_action.setCheckable(True) # Make it checkable
+
+        # Single Generation Action
+        self.single_gen_action = generate_menu.addAction("単発生成 (Ctrl+G)")
+        self.single_gen_action.setShortcut("Ctrl+G")
+        self.single_gen_action.triggered.connect(self._trigger_single_generation)
+
+        # Infinite Generation Action
+        self.infinite_gen_action = generate_menu.addAction("無限生成 開始/停止 (F5)")
+        self.infinite_gen_action.setShortcut("F5")
+        self.infinite_gen_action.setCheckable(True)
+        self.infinite_gen_action.triggered.connect(self._toggle_infinite_generation)
 
         # --- Settings Menu ---
         settings_menu = menu_bar.addMenu("設定(&S)") # Japanese & Mnemonic
         kobold_config_action = settings_menu.addAction("KoboldCpp 設定...") # Japanese
         gen_params_action = settings_menu.addAction("生成パラメータ設定...") # Japanese
-        kobold_config_action.triggered.connect(self._open_kobold_config_dialog) # Connect action
-        gen_params_action.triggered.connect(self._open_gen_params_dialog)     # Connect action
+        kobold_config_action.triggered.connect(self._open_kobold_config_dialog)
+        gen_params_action.triggered.connect(self._open_gen_params_dialog)
 
         # --- Help Menu ---
         help_menu = menu_bar.addMenu("ヘルプ(&H)") # Japanese
         placeholder_help = help_menu.addAction("バージョン情報 (未実装)")
         placeholder_help.setEnabled(False)
-        # Add actual actions later
 
     def _create_toolbar(self):
         """Creates the main toolbar for mode switching."""
         toolbar = QToolBar("モード選択")
-        toolbar.setMovable(False) # Prevent moving/detaching
+        toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
         mode_group = QActionGroup(self)
         mode_group.setExclusive(True)
 
-        # Novel Generation Mode Action
         self.gen_mode_action = QAction("小説生成", self)
         self.gen_mode_action.setCheckable(True)
-        self.gen_mode_action.setChecked(True) # Default mode
+        self.gen_mode_action.setChecked(True)
         self.gen_mode_action.triggered.connect(self._set_mode_generate)
         toolbar.addAction(self.gen_mode_action)
         mode_group.addAction(self.gen_mode_action)
 
-        # Idea Generation Mode Action
         self.idea_mode_action = QAction("アイデア出し", self)
         self.idea_mode_action.setCheckable(True)
         self.idea_mode_action.triggered.connect(self._set_mode_idea)
@@ -104,94 +105,76 @@ class MainWindow(QMainWindow):
     def _create_status_bar(self):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Ready")
+        self.status_bar.showMessage("準備完了") # Changed to Japanese
 
     def _create_central_widget(self):
-        # --- Central Splitter (Horizontal) ---
         central_splitter = QSplitter(Qt.Horizontal)
         self.setCentralWidget(central_splitter)
 
-        # --- Left Area (Containers for TextEdits + Buttons) ---
         left_widget = QWidget()
         left_main_layout = QVBoxLayout(left_widget)
         left_main_layout.setContentsMargins(0,0,0,0)
-        left_main_layout.setSpacing(0) # No space between splitter and buttons
-
+        left_main_layout.setSpacing(0)
         left_splitter = QSplitter(Qt.Vertical)
-        left_main_layout.addWidget(left_splitter) # Splitter takes most space
+        left_main_layout.addWidget(left_splitter)
 
-        # --- Left Top: Main Text Area + Button ---
         main_text_container = QWidget()
         main_text_layout = QVBoxLayout(main_text_container)
-        main_text_layout.setContentsMargins(0, 5, 0, 0) # Top margin for button
+        main_text_layout.setContentsMargins(0, 5, 0, 0)
         main_text_layout.setSpacing(5)
         self.main_text_edit = QPlainTextEdit()
         self.main_text_edit.setPlaceholderText("ここに小説本文を入力・編集します...")
         main_text_layout.addWidget(self.main_text_edit)
-        # Remove button from here
-        # main_to_memo_button = QPushButton("[ 選択部分をメモへ転記 ]")
-        # main_to_memo_button.clicked.connect(self._transfer_main_to_memo)
-        # main_text_layout.addWidget(main_to_memo_button, 0, Qt.AlignRight)
-        left_splitter.addWidget(main_text_container) # Add container to splitter
+        left_splitter.addWidget(main_text_container)
 
-        # --- Left Bottom: Output Area + Buttons ---
         output_container = QWidget()
         output_layout = QVBoxLayout(output_container)
-        output_layout.setContentsMargins(0, 5, 0, 0) # Top margin for buttons
+        output_layout.setContentsMargins(0, 5, 0, 0)
         output_layout.setSpacing(5)
         self.output_text_edit = QPlainTextEdit()
         self.output_text_edit.setReadOnly(True)
         self.output_text_edit.setPlaceholderText("LLMからの出力がここに表示されます...")
         output_layout.addWidget(self.output_text_edit)
-        # Buttons below output area
         output_button_layout = QHBoxLayout()
         output_clear_button = QPushButton("[ 出力物クリア ]")
         output_to_main_button = QPushButton("[ 選択部分を本文へ転記 ]")
-        output_to_memo_button = QPushButton("[ 選択部分をメモへ転記 ]") # Add button here
+        output_to_memo_button = QPushButton("[ 選択部分をメモへ転記 ]")
         output_clear_button.clicked.connect(self._clear_output_edit)
         output_to_main_button.clicked.connect(self._transfer_output_to_main)
-        output_to_memo_button.clicked.connect(self._transfer_output_to_memo) # Connect new method
+        output_to_memo_button.clicked.connect(self._transfer_output_to_memo)
         output_button_layout.addWidget(output_clear_button)
         output_button_layout.addWidget(output_to_main_button)
-        output_button_layout.addWidget(output_to_memo_button) # Add the new button
-        output_button_layout.addStretch() # Push buttons left
+        output_button_layout.addWidget(output_to_memo_button)
+        output_button_layout.addStretch()
         output_layout.addLayout(output_button_layout)
-        left_splitter.addWidget(output_container) # Add container to splitter
+        left_splitter.addWidget(output_container)
 
-        # --- Right Area (Tab Widget) ---
-        self.right_tab_widget = QTabWidget() # Make it an instance variable
-        self._create_details_tab() # Create Details Tab content
-        self._create_memo_tab()    # Create Memo Tab content
+        self.right_tab_widget = QTabWidget()
+        self._create_details_tab()
+        self._create_memo_tab()
         self.right_tab_widget.addTab(self.details_tab_widget, "詳細情報")
         self.right_tab_widget.addTab(self.memo_tab_widget, "メモ")
 
-        # --- Add Left and Right to Central Splitter ---
-        central_splitter.addWidget(left_widget) # Add left area first
-        central_splitter.addWidget(self.right_tab_widget) # Use instance variable
-
-        # --- Adjust initial sizes ---
-        central_splitter.setSizes([700, 500]) # Initial width ratio for central splitter
-        left_splitter.setSizes([600, 200]) # Initial height ratio for left splitter
+        central_splitter.addWidget(left_widget)
+        central_splitter.addWidget(self.right_tab_widget)
+        central_splitter.setSizes([700, 500])
+        left_splitter.setSizes([600, 200])
 
     def _create_details_tab(self):
         self.details_tab_widget = QWidget()
         details_main_layout = QVBoxLayout(self.details_tab_widget)
         details_main_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Scroll Area for content
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("QScrollArea { border: none; }") # Optional: remove border
+        scroll_area.setStyleSheet("QScrollArea { border: none; }")
         details_main_layout.addWidget(scroll_area)
-
         scroll_content_widget = QWidget()
         scroll_area.setWidget(scroll_content_widget)
-
         details_layout = QVBoxLayout(scroll_content_widget)
-        details_layout.setSpacing(5) # Spacing between sections
+        details_layout.setSpacing(5)
 
-        # --- Title Section ---
-        title_section = CollapsibleSection("タイトル") # Use the imported class
+        # Title
+        title_section = CollapsibleSection("タイトル")
         title_layout = QHBoxLayout()
         self.title_edit = QLineEdit()
         self.title_transfer_button = QPushButton("← 転記")
@@ -201,22 +184,22 @@ class MainWindow(QMainWindow):
         title_section.content_layout.addLayout(title_layout)
         details_layout.addWidget(title_section)
 
-        # --- Keywords Section ---
-        keywords_section = CollapsibleSection("キーワード") # Use the imported class
-        self.keywords_widget = TagWidget() # Use the imported class
+        # Keywords
+        keywords_section = CollapsibleSection("キーワード")
+        self.keywords_widget = TagWidget()
         self.keywords_widget.transfer_button.clicked.connect(lambda: self._transfer_idea_to_details("keywords"))
         keywords_section.addWidget(self.keywords_widget)
         details_layout.addWidget(keywords_section)
 
-        # --- Genre Section ---
-        genre_section = CollapsibleSection("ジャンル") # Use the imported class
-        self.genre_widget = TagWidget() # Use the imported class
+        # Genre
+        genre_section = CollapsibleSection("ジャンル")
+        self.genre_widget = TagWidget()
         self.genre_widget.transfer_button.clicked.connect(lambda: self._transfer_idea_to_details("genres"))
         genre_section.addWidget(self.genre_widget)
         details_layout.addWidget(genre_section)
 
-        # --- Synopsis Section ---
-        synopsis_section = CollapsibleSection("あらすじ") # Use the imported class
+        # Synopsis
+        synopsis_section = CollapsibleSection("あらすじ")
         synopsis_layout = QHBoxLayout()
         self.synopsis_edit = QPlainTextEdit()
         self.synopsis_edit.setPlaceholderText("小説のあらすじを入力...")
@@ -227,8 +210,8 @@ class MainWindow(QMainWindow):
         synopsis_section.content_layout.addLayout(synopsis_layout)
         details_layout.addWidget(synopsis_section)
 
-        # --- Setting Section ---
-        setting_section = CollapsibleSection("設定") # Use the imported class
+        # Setting
+        setting_section = CollapsibleSection("設定")
         setting_layout = QHBoxLayout()
         self.setting_edit = QPlainTextEdit()
         self.setting_edit.setPlaceholderText("世界観、キャラクター設定などを入力...")
@@ -239,8 +222,8 @@ class MainWindow(QMainWindow):
         setting_section.content_layout.addLayout(setting_layout)
         details_layout.addWidget(setting_section)
 
-        # --- Plot Section ---
-        plot_section = CollapsibleSection("プロット") # Use the imported class
+        # Plot
+        plot_section = CollapsibleSection("プロット")
         plot_layout = QHBoxLayout()
         self.plot_edit = QPlainTextEdit()
         self.plot_edit.setPlaceholderText("物語の展開、構成などを入力...")
@@ -251,7 +234,7 @@ class MainWindow(QMainWindow):
         plot_section.content_layout.addLayout(plot_layout)
         details_layout.addWidget(plot_section)
 
-        details_layout.addStretch() # Push sections to the top
+        details_layout.addStretch()
 
     def _create_memo_tab(self):
         self.memo_tab_widget = QWidget()
@@ -260,52 +243,38 @@ class MainWindow(QMainWindow):
         self.memo_edit.setPlaceholderText("自由にメモを記入できます...")
         memo_clear_button = QPushButton("メモクリア")
         memo_clear_button.clicked.connect(self._clear_memo_edit)
-
         memo_layout.addWidget(self.memo_edit)
         memo_layout.addWidget(memo_clear_button, 0, Qt.AlignRight)
 
     def _clear_memo_edit(self):
-        """Clears the content of the memo text edit."""
         self.memo_edit.clear()
 
     def _open_kobold_config_dialog(self):
-        """Opens the KoboldCpp configuration dialog."""
-        # Check if dialog was accepted before reloading settings
         dialog = KoboldConfigDialog(self)
         if dialog.exec() == QDialog.Accepted:
             self.status_bar.showMessage("KoboldCpp 設定が更新されました。", 3000)
-            self.kobold_client.reload_settings() # Reload only if accepted
+            self.kobold_client.reload_settings()
         else:
             self.status_bar.showMessage("KoboldCpp 設定の変更はキャンセルされました。", 3000)
 
     def _open_gen_params_dialog(self):
-        """Opens the generation parameters configuration dialog."""
-        # Check if dialog was accepted before reloading settings
         dialog = GenerationParamsDialog(self)
         if dialog.exec() == QDialog.Accepted:
             self.status_bar.showMessage("生成パラメータが更新されました。", 3000)
-            self.kobold_client.reload_settings() # Reload only if accepted
+            self.kobold_client.reload_settings()
         else:
             self.status_bar.showMessage("生成パラメータの変更はキャンセルされました。", 3000)
 
-
+    # --- Generation Control Slots ---
     @Slot()
-    def _toggle_generation(self):
-        """Starts or stops the text generation process."""
-        if self.is_generating:
-            self._stop_generation()
-        else:
-            self._start_generation()
-
-    def _start_generation(self):
-        """Starts the asynchronous generation task."""
-        if self.is_generating:
+    def _trigger_single_generation(self):
+        """Starts a single generation task."""
+        if self.generation_status != "idle":
+            QMessageBox.warning(self, "生成中", "現在、別の生成が実行中です。")
             return
 
-        self.is_generating = True
-        self.start_stop_action.setChecked(True)
-        self.status_bar.showMessage("生成中...")
-        # Disable relevant UI elements if needed (e.g., settings menu)
+        self.generation_status = "single_running"
+        self._update_ui_for_generation_start()
 
         main_text = self.main_text_edit.toPlainText()
         metadata = self._get_metadata_from_ui()
@@ -314,73 +283,160 @@ class MainWindow(QMainWindow):
         separator = f"\n--- 生成ブロック {self.output_block_counter} ---\n"
         self._append_to_output(separator)
 
-        self.generation_task = asyncio.ensure_future(self._run_generation(prompt))
+        self.generation_task = asyncio.ensure_future(self._run_single_generation(prompt))
 
-    def _stop_generation(self):
-        """Stops the currently running generation task."""
-        if not self.is_generating or self.generation_task is None:
+    @Slot()
+    def _toggle_infinite_generation(self):
+        """Starts or stops the infinite generation loop."""
+        if self.generation_status == "infinite_running":
+            self._stop_current_generation()
+        elif self.generation_status == "idle":
+            self._start_infinite_generation()
+        else: # single_running
+            QMessageBox.warning(self, "生成中", "現在、単発生成が実行中です。停止してから無限生成を開始してください。")
+            self.infinite_gen_action.setChecked(False) # Uncheck the button
+
+    def _start_infinite_generation(self):
+        """Starts the infinite generation loop."""
+        self.generation_status = "infinite_running"
+        self._update_ui_for_generation_start()
+
+        main_text = self.main_text_edit.toPlainText()
+        metadata = self._get_metadata_from_ui()
+        self.infinite_generation_prompt = build_prompt(self.current_mode, main_text, metadata)
+
+        self.generation_task = asyncio.ensure_future(self._run_infinite_generation_loop())
+
+    def _stop_current_generation(self):
+        """Stops any currently running generation task."""
+        if self.generation_status == "idle" or self.generation_task is None:
             return
 
-        self.is_generating = False
-        self.start_stop_action.setChecked(False)
-        self.status_bar.showMessage("生成停止中...", 2000)
+        current_status_before_stop = self.generation_status
+        self.generation_status = "idle" # Set status to idle first
+
+        if current_status_before_stop == "infinite_running":
+            self.status_bar.showMessage("無限生成 停止中...", 2000)
+        else: # single_running
+            self.status_bar.showMessage("単発生成 停止中...", 2000)
 
         if self.generation_task and not self.generation_task.done():
             self.generation_task.cancel()
+            # Set task to None immediately after cancellation request
+            self.generation_task = None
 
-        self.generation_task = None
+        self._update_ui_for_generation_stop()
+        # Add a slight delay before final status message if needed
+        # QTimer.singleShot(100, lambda: self.status_bar.showMessage("停止中", 3000))
         self.status_bar.showMessage("停止中", 3000)
-        # Re-enable UI elements if they were disabled
 
-    async def _run_generation(self, prompt: str):
-        """The async function that calls the client and updates UI directly (using qasync)."""
+
+    def _update_ui_for_generation_start(self):
+        """Updates UI elements when generation starts."""
+        if self.generation_status == "infinite_running":
+            self.infinite_gen_action.setChecked(True)
+            self.status_bar.showMessage("無限生成中 (F5で停止)...")
+        elif self.generation_status == "single_running":
+             self.infinite_gen_action.setChecked(False) # Ensure infinite is unchecked
+             self.status_bar.showMessage("単発生成中...")
+
+        self.single_gen_action.setEnabled(False)
+        self.infinite_gen_action.setEnabled(self.generation_status == "infinite_running") # Only enable stop for infinite
+
+    def _update_ui_for_generation_stop(self):
+        """Updates UI elements when generation stops or completes."""
+        self.infinite_gen_action.setChecked(False)
+        self.single_gen_action.setEnabled(True)
+        self.infinite_gen_action.setEnabled(True)
+        # Status message is set by the calling function (_stop_current_generation or async methods)
+
+
+    # --- Async Generation Methods ---
+    async def _run_single_generation(self, prompt: str):
+        """Runs a single generation and updates status."""
         try:
             async for token in self.kobold_client.generate_stream(prompt):
                 self._append_to_output(token)
-                await asyncio.sleep(0.001)
+                await asyncio.sleep(0.001) # Yield control briefly
 
-            if self.is_generating:
-                self.is_generating = False
-                self.start_stop_action.setChecked(False)
-                self.status_bar.showMessage("生成完了", 3000)
-                self.output_block_counter += 1
+            # Finished successfully
+            self.output_block_counter += 1
+            self.status_bar.showMessage("単発生成 完了", 3000)
 
         except KoboldClientError as e:
             error_msg = f"\n--- エラー: {e} ---\n"
             self._append_to_output(error_msg)
-            if self.is_generating:
-                self.is_generating = False
-                self.start_stop_action.setChecked(False)
-                self.status_bar.showMessage("生成エラー", 3000)
+            self.status_bar.showMessage("生成エラー", 3000)
         except asyncio.CancelledError:
-            print("Generation task cancelled.")
+            print("Single generation task cancelled unexpectedly.")
             self._append_to_output("\n--- 生成がキャンセルされました ---\n")
+            self.status_bar.showMessage("生成キャンセル", 3000)
         except Exception as e:
              error_msg = f"\n--- 予期せぬエラーが発生しました: {e} ---\n"
              print(error_msg)
              self._append_to_output(error_msg)
-             if self.is_generating:
-                self.is_generating = False
-                self.start_stop_action.setChecked(False)
-                self.status_bar.showMessage("予期せぬエラー", 3000)
+             self.status_bar.showMessage("予期せぬエラー", 3000)
         finally:
-             if self.is_generating: # Ensure state is reset if error occurred mid-stream
-                 self.is_generating = False
-                 self.start_stop_action.setChecked(False)
-                 self.status_bar.showMessage("停止中 (エラー発生)", 3000)
+            # Reset status after single run finishes or errors out
+            self.generation_status = "idle"
+            self._update_ui_for_generation_stop()
+            self.generation_task = None
+
+    async def _run_infinite_generation_loop(self):
+        """Continuously generates text using the stored prompt."""
+        if not self.infinite_generation_prompt:
+            print("Error: Infinite generation prompt is empty.")
+            self._stop_current_generation()
+            return
+
+        try:
+            while self.generation_status == "infinite_running":
+                separator = f"\n--- 生成ブロック {self.output_block_counter} ---\n"
+                self._append_to_output(separator)
+                try:
+                    async for token in self.kobold_client.generate_stream(self.infinite_generation_prompt):
+                        if self.generation_status != "infinite_running":
+                            raise asyncio.CancelledError("Infinite generation stopped during stream.")
+                        self._append_to_output(token)
+                        await asyncio.sleep(0.001)
+
+                    self.output_block_counter += 1
+                    await asyncio.sleep(0.5) # Wait before next generation
+
+                except KoboldClientError as e:
+                    error_msg = f"\n--- 無限生成中エラー: {e} ---\n"
+                    self._append_to_output(error_msg)
+                    self.status_bar.showMessage("無限生成エラー発生、停止します", 5000)
+                    self._stop_current_generation()
+                    break
+                except asyncio.CancelledError:
+                     print("Infinite generation loop cancelled.")
+                     # Don't append message here, _stop_current_generation handles UI
+                     break
+                except Exception as e:
+                     error_msg = f"\n--- 無限生成中に予期せぬエラー: {e} ---\n"
+                     print(error_msg)
+                     self._append_to_output(error_msg)
+                     self.status_bar.showMessage("予期せぬエラー発生、停止します", 5000)
+                     self._stop_current_generation()
+                     break
+        finally:
+            # Ensure status is reset if loop exits unexpectedly
+            if self.generation_status == "infinite_running":
+                 self._stop_current_generation()
 
 
     def _append_to_output(self, text: str):
         """Safely appends text to the output area and handles scrolling."""
         cursor = self.output_text_edit.textCursor()
         v_bar = self.output_text_edit.verticalScrollBar()
-        is_at_bottom = v_bar.value() >= v_bar.maximum() - 5 # Check if near bottom
+        is_at_bottom = v_bar.value() >= v_bar.maximum() - 5
 
         cursor.movePosition(QTextCursor.End)
         cursor.insertText(text)
 
         if is_at_bottom:
-            v_bar.setValue(v_bar.maximum()) # Scroll to bottom
+            v_bar.setValue(v_bar.maximum())
 
     def _get_metadata_from_ui(self) -> dict:
         """Retrieves metadata values from the UI widgets."""
@@ -396,8 +452,8 @@ class MainWindow(QMainWindow):
     async def _cleanup(self): # Make cleanup async
         """Closes the Kobold client when the application is about to quit."""
         print("Cleaning up...")
-        if self.is_generating:
-            self._stop_generation() # Attempt to stop gracefully
+        if self.generation_status != "idle":
+            self._stop_current_generation() # Attempt to stop gracefully
         print("Requesting Kobold client close...")
         try:
             await self.kobold_client.close() # Await the async close
@@ -421,16 +477,6 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("選択範囲を本文エリアに転記しました。", 2000)
         else:
             self.status_bar.showMessage("出力エリアでテキストが選択されていません。", 2000)
-
-    @Slot()
-    def _transfer_main_to_memo(self):
-        """Transfers selected text from main text area to memo area."""
-        selected_text = self.main_text_edit.textCursor().selectedText()
-        if selected_text:
-            self.memo_edit.appendPlainText(selected_text) # Append to memo
-            self.status_bar.showMessage("選択範囲をメモエリアに転記しました。", 2000)
-        else:
-            self.status_bar.showMessage("本文エリアでテキストが選択されていません。", 2000)
 
     @Slot()
     def _transfer_output_to_memo(self): # Renamed from _transfer_main_to_memo
@@ -500,12 +546,22 @@ class MainWindow(QMainWindow):
     @Slot()
     def _set_mode_generate(self):
         """Sets the application mode to 'generate'."""
+        if self.generation_status != "idle":
+             QMessageBox.warning(self, "生成中", "生成中にモードは変更できません。")
+             self.idea_mode_action.setChecked(self.current_mode == "idea") # Revert check state
+             self.gen_mode_action.setChecked(self.current_mode == "generate")
+             return
         self.current_mode = "generate"
         self.status_bar.showMessage("モード: 小説生成", 2000)
 
     @Slot()
     def _set_mode_idea(self):
         """Sets the application mode to 'idea'."""
+        if self.generation_status != "idle":
+             QMessageBox.warning(self, "生成中", "生成中にモードは変更できません。")
+             self.idea_mode_action.setChecked(self.current_mode == "idea") # Revert check state
+             self.gen_mode_action.setChecked(self.current_mode == "generate")
+             return
         self.current_mode = "idea"
         self.status_bar.showMessage("モード: アイデア出し", 2000)
 
@@ -516,7 +572,6 @@ if __name__ == "__main__":
     asyncio.set_event_loop(loop)
 
     window = MainWindow()
-    # Make _cleanup an async function and connect it properly
     async def async_cleanup():
         await window._cleanup()
     app.aboutToQuit.connect(lambda: asyncio.ensure_future(async_cleanup()))
