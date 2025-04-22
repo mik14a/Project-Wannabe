@@ -31,6 +31,7 @@ class KoboldClient:
     async def generate_stream(
         self,
         prompt: str,
+        max_length: Optional[int] = None, # Add max_length parameter
         generation_params: Optional[Dict[str, Any]] = None
     ) -> AsyncGenerator[str, None]:
         """
@@ -38,7 +39,8 @@ class KoboldClient:
 
         Args:
             prompt: The input prompt string.
-            generation_params: Optional dictionary overriding default generation parameters.
+            max_length: Optional specific max_length for this generation request.
+            generation_params: Optional dictionary overriding other default generation parameters.
 
         Yields:
             str: Generated text chunks (tokens).
@@ -47,9 +49,9 @@ class KoboldClient:
             KoboldClientError: If connection fails or API returns an error status.
         """
         api_url = self._get_api_url()
-        # Combine default settings with overrides
+        # Combine default settings with overrides, prioritizing the max_length argument
         params_to_send = {
-            "max_length": self._current_settings.get("max_length"),
+            # "max_length": self._current_settings.get("max_length"), # Removed reading from settings
             "temperature": self._current_settings.get("temperature"),
             "min_p": self._current_settings.get("min_p"),
             "top_p": self._current_settings.get("top_p"),
@@ -61,8 +63,14 @@ class KoboldClient:
 
         payload = {
             "prompt": prompt,
-            **params_to_send # Unpack parameters into payload
+            **params_to_send # Unpack base parameters into payload
         }
+
+        # Set max_length based on the argument if provided
+        if max_length is not None:
+            payload["max_length"] = max_length
+        # Else, KoboldCpp might use its own default if not provided
+
         # Filter out None values if KoboldCpp doesn't like them
         payload = {k: v for k, v in payload.items() if v is not None}
 

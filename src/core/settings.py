@@ -5,7 +5,9 @@ from typing import Any, Dict, List
 CONFIG_FILE = "config.json"
 DEFAULT_SETTINGS = {
     "kobold_port": 5001,
-    "max_length": 250,
+    # "max_length": 250, # Removed old setting
+    "max_length_idea": 500, # Default for idea mode
+    "max_length_generate": 250, # Default for generate mode
     "temperature": 0.15,
     "min_p": 0.1,
     "top_p": 0.95,
@@ -36,6 +38,16 @@ def load_settings() -> Dict[str, Any]:
                 loaded_settings = json.load(f)
                 # *** FIX: Update defaults with loaded settings, preserving all keys from file ***
                 settings.update(loaded_settings) # Overwrite defaults with any values found in the file
+
+                # --- Backward compatibility for max_length ---
+                if "max_length" in loaded_settings and "max_length_idea" not in loaded_settings and "max_length_generate" not in loaded_settings:
+                    print("Migrating old 'max_length' setting...")
+                    old_max_length = loaded_settings["max_length"]
+                    settings["max_length_idea"] = old_max_length
+                    settings["max_length_generate"] = old_max_length
+                    # Optionally remove the old key from the loaded settings before saving again later
+                    # We don't remove it here directly from 'settings' as save_settings merges with defaults
+                # --- End backward compatibility ---
 
                 # Optional: Add validation here if needed, e.g., check types for known keys
                 # for key, value in loaded_settings.items():

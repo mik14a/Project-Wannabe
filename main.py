@@ -326,7 +326,15 @@ class MainWindow(QMainWindow):
     async def _run_single_generation(self, prompt: str):
         """Runs a single generation and updates status."""
         try:
-            async for token in self.kobold_client.generate_stream(prompt):
+            # Get mode-specific max_length
+            settings = load_settings()
+            if self.current_mode == "idea":
+                current_max_length = settings.get("max_length_idea", DEFAULT_SETTINGS["max_length_idea"])
+            else: # generate mode
+                current_max_length = settings.get("max_length_generate", DEFAULT_SETTINGS["max_length_generate"])
+
+            # Pass max_length to generate_stream (assuming it accepts it)
+            async for token in self.kobold_client.generate_stream(prompt, max_length=current_max_length):
                 self._append_to_output(token)
                 await asyncio.sleep(0.001) # Yield control briefly
 
@@ -384,7 +392,16 @@ class MainWindow(QMainWindow):
                 separator = f"\n--- 生成ブロック {self.output_block_counter} ---\n"
                 self._append_to_output(separator)
                 try:
-                    async for token in self.kobold_client.generate_stream(current_prompt):
+                    # Get mode-specific max_length inside the loop (in case settings change)
+                    # Although changing settings during infinite gen might be blocked by UI logic
+                    settings = load_settings()
+                    if self.current_mode == "idea":
+                        current_max_length = settings.get("max_length_idea", DEFAULT_SETTINGS["max_length_idea"])
+                    else: # generate mode
+                        current_max_length = settings.get("max_length_generate", DEFAULT_SETTINGS["max_length_generate"])
+
+                    # Pass max_length to generate_stream (assuming it accepts it)
+                    async for token in self.kobold_client.generate_stream(current_prompt, max_length=current_max_length):
                         if self.generation_status != "infinite_running":
                             raise asyncio.CancelledError("Infinite generation stopped during stream.")
                         self._append_to_output(token)
