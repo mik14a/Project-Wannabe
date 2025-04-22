@@ -14,7 +14,9 @@ DEFAULT_SETTINGS = {
     "infinite_generation_behavior": { # Add new setting for infinite generation behavior
         "idea": "manual", # "immediate" or "manual"
         "generate": "manual" # "immediate" or "manual"
-    }
+    },
+    "transfer_to_main_mode": "cursor", # "cursor", "next_line_always", "next_line_eol"
+    "transfer_newlines_before": 0 # Number of empty lines to insert before transfer in next_line modes
 }
 
 def get_config_path() -> str:

@@ -1,6 +1,8 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
                                QDoubleSpinBox, QTextEdit, QFormLayout,
-                               QDialogButtonBox, QWidget, QGroupBox, QRadioButton) # Add QGroupBox, QRadioButton
+                               QDialogButtonBox, QWidget, QGroupBox, QRadioButton,
+                               QSpacerItem, QSizePolicy) # Add QSpacerItem, QSizePolicy
+from PySide6.QtCore import Slot # Import Slot
 from src.core.settings import load_settings, save_settings, DEFAULT_SETTINGS
 
 class KoboldConfigDialog(QDialog):
@@ -139,6 +141,48 @@ class GenerationParamsDialog(QDialog):
         else:
             self.gen_manual_radio.setChecked(True)
 
+        # --- Transfer to Main Text Settings ---
+        transfer_group = QGroupBox("出力から本文への転記設定")
+        transfer_layout = QVBoxLayout(transfer_group)
+
+        # Transfer Mode Radio Buttons
+        transfer_mode_layout = QHBoxLayout()
+        self.transfer_cursor_radio = QRadioButton("カーソル位置に挿入")
+        self.transfer_next_always_radio = QRadioButton("常に次の行に挿入")
+        self.transfer_next_eol_radio = QRadioButton("行末の場合のみ次の行に挿入")
+        transfer_mode_layout.addWidget(self.transfer_cursor_radio)
+        transfer_mode_layout.addWidget(self.transfer_next_always_radio)
+        transfer_mode_layout.addWidget(self.transfer_next_eol_radio)
+        transfer_layout.addLayout(transfer_mode_layout)
+
+        # Newlines Before Transfer SpinBox
+        newline_layout = QHBoxLayout()
+        newline_label = QLabel("次の行に挿入する際の追加空行数:")
+        self.transfer_newlines_spinbox = QSpinBox()
+        self.transfer_newlines_spinbox.setRange(0, 5) # Allow 0 to 5 empty lines
+        self.transfer_newlines_spinbox.setValue(self.current_settings.get("transfer_newlines_before", DEFAULT_SETTINGS["transfer_newlines_before"]))
+        newline_layout.addWidget(newline_label)
+        newline_layout.addWidget(self.transfer_newlines_spinbox)
+        newline_layout.addSpacerItem(QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)) # Add spacer
+        transfer_layout.addLayout(newline_layout)
+
+        main_layout.addWidget(transfer_group)
+
+        # Load initial state for transfer settings
+        transfer_mode = self.current_settings.get("transfer_to_main_mode", DEFAULT_SETTINGS["transfer_to_main_mode"])
+        if transfer_mode == "next_line_always":
+            self.transfer_next_always_radio.setChecked(True)
+        elif transfer_mode == "next_line_eol":
+            self.transfer_next_eol_radio.setChecked(True)
+        else: # Default to cursor
+            self.transfer_cursor_radio.setChecked(True)
+
+        # Connect radio buttons to enable/disable spinbox
+        self.transfer_cursor_radio.toggled.connect(self._update_newline_spinbox_state)
+        self.transfer_next_always_radio.toggled.connect(self._update_newline_spinbox_state)
+        self.transfer_next_eol_radio.toggled.connect(self._update_newline_spinbox_state)
+        self._update_newline_spinbox_state() # Set initial state
+
         # Dialog buttons
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         button_box.accepted.connect(self.accept)
@@ -164,8 +208,23 @@ class GenerationParamsDialog(QDialog):
         inf_gen_behavior["generate"] = "immediate" if self.gen_immediate_radio.isChecked() else "manual"
         self.current_settings["infinite_generation_behavior"] = inf_gen_behavior
 
+        # Save transfer settings
+        if self.transfer_next_always_radio.isChecked():
+            self.current_settings["transfer_to_main_mode"] = "next_line_always"
+        elif self.transfer_next_eol_radio.isChecked():
+            self.current_settings["transfer_to_main_mode"] = "next_line_eol"
+        else:
+            self.current_settings["transfer_to_main_mode"] = "cursor"
+        self.current_settings["transfer_newlines_before"] = self.transfer_newlines_spinbox.value()
+
         save_settings(self.current_settings)
         super().accept()
+
+    @Slot()
+    def _update_newline_spinbox_state(self):
+        """Enables or disables the newline spinbox based on the selected transfer mode."""
+        enable = self.transfer_next_always_radio.isChecked() or self.transfer_next_eol_radio.isChecked()
+        self.transfer_newlines_spinbox.setEnabled(enable)
 
     @staticmethod
     def show_dialog(parent: QWidget | None = None) -> bool:

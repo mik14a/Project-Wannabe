@@ -460,13 +460,37 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _transfer_output_to_main(self):
-        """Transfers selected text from output area to main text area."""
+        """Transfers selected text from output area to main text area based on settings."""
         selected_text = self.output_text_edit.textCursor().selectedText()
-        if selected_text:
-            self.main_text_edit.textCursor().insertText(selected_text)
-            self.status_bar.showMessage("選択範囲を本文エリアに転記しました。", 2000)
-        else:
+        if not selected_text:
             self.status_bar.showMessage("出力エリアでテキストが選択されていません。", 2000)
+            return
+
+        settings = load_settings()
+        transfer_mode = settings.get("transfer_to_main_mode", DEFAULT_SETTINGS["transfer_to_main_mode"])
+        newlines_before = settings.get("transfer_newlines_before", DEFAULT_SETTINGS["transfer_newlines_before"])
+
+        cursor = self.main_text_edit.textCursor()
+
+        if transfer_mode == "cursor":
+            cursor.insertText(selected_text)
+        elif transfer_mode == "next_line_always":
+            cursor.movePosition(QTextCursor.EndOfLine)
+            newlines_to_insert = "\n" * (newlines_before + 1)
+            cursor.insertText(newlines_to_insert + selected_text)
+        elif transfer_mode == "next_line_eol":
+            if cursor.atBlockEnd():
+                # Behave like next_line_always if at end of line (block)
+                cursor.movePosition(QTextCursor.EndOfLine) # Ensure truly at end
+                newlines_to_insert = "\n" * (newlines_before + 1)
+                cursor.insertText(newlines_to_insert + selected_text)
+            else:
+                # Behave like cursor mode if not at end of line
+                cursor.insertText(selected_text)
+        else: # Fallback to cursor mode if setting is invalid
+            cursor.insertText(selected_text)
+
+        self.status_bar.showMessage("選択範囲を本文エリアに転記しました。", 2000)
 
     @Slot()
     def _transfer_output_to_memo(self): # Renamed from _transfer_main_to_memo

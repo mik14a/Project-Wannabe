@@ -1,7 +1,7 @@
 {
     "kobold_port": 5001,
-    "max_length": 700,
-    "temperature": 0.3,
+    "max_length": 300,
+    "temperature": 0.5,
     "min_p": 0.1,
     "top_p": 0.95,
     "rep_pen": 1.1,
@@ -10,6 +10,8 @@
         "idea": "immediate",
         "generate": "immediate"
     },
+    "transfer_to_main_mode": "next_line_eol",
+    "transfer_newlines_before": 0,
     "font_family": "ＭＳ Ｐ明朝",
     "font_size": 12
 }
