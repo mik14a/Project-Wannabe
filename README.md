@@ -1,10 +1,10 @@
 # Project Wannabe
 
-**Project Wannabe** は、小説執筆に特化した AI モデル **「[wanabi 24B](https://huggingface.co/kawaimasa/wanabi_24b_alpha_q4km)」** と、その能力を最大限に引き出すための専用デスクトップアプリケーション（フロントエンド）を統合したプロジェクトです。
+**Project Wannabe** は、小説執筆に特化した AI モデル **「[wanabi 24B](https://huggingface.co/kawaimasa/wanabi_24b_preview_gguf)」** と、その能力を最大限に引き出すための専用デスクトップアプリケーション（フロントエンド）を統合したプロジェクトです。
 
 ## 🎯 目的とコンセプト
 
-このアプリケーションは、Mistral Small 3 Base (24B) をベースに、小説データを中心としたデータセット等を用いて独自にファインチューニングされた **「[wanabi 24B](https://huggingface.co/kawaimasa/wanabi_24b_alpha_q4km)」モデル** の持つ、**小説生成に関する特有の能力**を最大限に引き出すことを目的としています。
+このアプリケーションは、Mistral Small 3 Base (24B) をベースに、小説データを中心としたデータセット等を用いて独自にファインチューニングされた **「[wanabi 24B](https://huggingface.co/kawaimasa/wanabi_24b_preview_gguf)」モデル** の持つ、**小説生成に関する特有の能力**を最大限に引き出すことを目的としています。
 
 「wanabi 24B」は、特定の指示形式を用いることで小説のアイデア出し、設定に基づいた本文生成、そして文脈に沿った続きの生成に特化させたファインチューニングモデルです。Project Wannabe は、このモデルとの最適なGUIを提供することで、ユーザーの執筆プロセスを強力にサポートします。
 
@@ -19,7 +19,7 @@
 
 この **Project Wannabe** アプリケーションは、「[wanabi 24B](https://huggingface.co/kawaimasa/wanabi_24b_alpha_q4km)」モデルの**連続生成能力（無限生成）**を最大限に活用する専用フロントエンドとして機能します。ローカル環境で動作するため、**コストや外部サービスの検閲フィルターを気にすることなく**、自由な試行錯誤（AI ガチャ）が可能です。ユーザーが生成されたテキストの中から最適なものを**「選択」**していくことで、誰でも容易に小説を創り上げられるように支援し、文章創作の敷居を下げることを目指します。
 
-**前提:** このアプリケーションを使用するには、別途 **[KoboldCpp](https://github.com/LostRuins/koboldcpp)** をローカル環境で起動し、**「[wanabi 24B](https://huggingface.co/kawaimasa/wanabi_24b_alpha_q4km)」モデル**（または互換性のある GGUF 形式のモデル）をロードしておく必要があります。
+**前提:** このアプリケーションを使用するには、別途 **[KoboldCpp](https://github.com/LostRuins/koboldcpp)** をローカル環境で起動し、**「[wanabi 24B](https://huggingface.co/kawaimasa/wanabi_24b_preview_gguf)」モデル**（または互換性のある GGUF 形式のモデル）をロードしておく必要があります。
 
 ## 🚀 主な機能 (Features)
 
@@ -110,7 +110,7 @@
 
 *   **Python:** 3.9 以上
 *   **Git:** ソースコードから実行する場合に必要です。
-*   **KoboldCpp:** ローカル環境で別途起動し、**「[wanabi 24B](https://huggingface.co/kawaimasa/wanabi_24b_alpha_q4km)」モデル (GGUF形式)** または互換性のあるモデルをロードしている必要があります。 ([KoboldCpp](https://github.com/LostRuins/koboldcpp))
+*   **KoboldCpp:** ローカル環境で別途起動し、**「[wanabi 24B](https://huggingface.co/kawaimasa/wanabi_24b_preview_gguf)」モデル (GGUF形式)** または互換性のあるモデルをロードしている必要があります。 ([KoboldCpp](https://github.com/LostRuins/koboldcpp))
 
 ### インストール手順
 
@@ -150,10 +150,10 @@ KoboldCpp のセットアップを含む、より詳細な手順については 
 
 *   **wanabi 24B v1 (学習中):**
     *   リリース目標: 約2週間以内
-    *   内容: アルファ版からの改善・調整版。
+    *   内容: preview版からの追加学習版。
 *   **wanabi 24B v2 (データセット準備中):**
     *   リリース目標: 数ヶ月以内
-    *   内容: Pre-training を行い、さらに拡張されたデータセットを用いた指示学習 (SFT) を実施予定。より高性能なモデルを目指します。
+    *   内容: Pre-training を行い、さらに拡張されたデータセットを用いた指示学習 (SFT) を実施予定。より創造的なモデルを目指します。
 
 *(注意: 上記ロードマップは現時点での予定であり、変更される可能性があります。)*
 
