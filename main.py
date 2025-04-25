@@ -5,7 +5,7 @@ import re # Import regex module
 from PySide6.QtWidgets import (QApplication, QMainWindow, QMenuBar, QStatusBar,
                                QSplitter, QTextEdit, QWidget, QVBoxLayout, QHBoxLayout,
                                QTabWidget, QScrollArea, QLineEdit, QPushButton, QMessageBox,
-                               QPlainTextEdit, QToolBar, QDialog, QLineEdit, # Add QLineEdit
+                               QPlainTextEdit, QToolBar, QDialog, QLineEdit, QLabel, QComboBox, # Add QLabel, QComboBox
                                QPlainTextEdit) # Ensure QPlainTextEdit is imported
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QTextCursor, QAction, QActionGroup, QFont # Add QFont
@@ -203,6 +203,21 @@ class MainWindow(QMainWindow):
         plot_layout.addWidget(self.plot_transfer_button, 0, Qt.AlignTop)
         plot_section.content_layout.addLayout(plot_layout)
         details_layout.addWidget(plot_section)
+
+        # Dialogue Level
+        dialogue_section = CollapsibleSection("セリフ量")
+        dialogue_layout = QHBoxLayout()
+        dialogue_label = QLabel("セリフ量:")
+        self.dialogue_level_combo = QComboBox()
+        self.dialogue_level_combo.addItems([
+            "指定なし", "少ない", "やや少ない", "普通", "やや多い", "多い"
+        ])
+        dialogue_layout.addWidget(dialogue_label)
+        dialogue_layout.addWidget(self.dialogue_level_combo)
+        dialogue_layout.addStretch() # Add stretch to push combo box to the left
+        dialogue_section.content_layout.addLayout(dialogue_layout)
+        details_layout.addWidget(dialogue_section)
+
 
         details_layout.addStretch()
 
@@ -477,7 +492,7 @@ class MainWindow(QMainWindow):
 
     def _get_metadata_from_ui(self) -> dict:
         """Retrieves metadata values from the UI widgets."""
-        return {
+        metadata = { # Initialize the dictionary first
             "title": self.title_edit.text(),
             "keywords": self.keywords_widget.get_tags(),
             "genres": self.genre_widget.get_tags(),
@@ -485,6 +500,11 @@ class MainWindow(QMainWindow):
             "setting": self.setting_edit.toPlainText(),
             "plot": self.plot_edit.toPlainText(),
         }
+        # Add dialogue level if selected
+        selected_level = self.dialogue_level_combo.currentText()
+        if selected_level != "指定なし":
+            metadata["dialogue_level"] = selected_level # Add to the dictionary
+        return metadata # Return the potentially modified dictionary
 
     async def _cleanup(self): # Make cleanup async
         """Closes the Kobold client when the application is about to quit."""

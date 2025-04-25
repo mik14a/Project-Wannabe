@@ -28,20 +28,45 @@ METADATA_MAP = {
     "synopsis": "あらすじ",
     "setting": "設定",
     "plot": "プロット",
+    "dialogue_level": "セリフ量", # Add dialogue level
 }
 
-def format_metadata(metadata: Dict[str, str | list[str]]) -> str:
-    """Formats the metadata dictionary into a string for the prompt."""
+# Define the order for metadata in the prompt
+INPUT_METADATA_ORDER_JA = [
+    "タイトル", "キーワード", "ジャンル", "あらすじ", "設定", "プロット", "セリフ量"
+]
+# Create a reverse map for easier lookup
+KEY_MAP_FROM_JA = {v: k for k, v in METADATA_MAP.items()}
+
+
+def format_metadata(metadata: Dict[str, str | list[str]], mode: str = "generate") -> str:
+    """
+    Formats the metadata dictionary into a string for the prompt, respecting order.
+    Excludes 'dialogue_level' if mode is 'idea'.
+    """
     output = []
-    for key, japanese_name in METADATA_MAP.items():
-        value = metadata.get(key) # データセット側のキーで値を取得
+    # Iterate based on the defined Japanese name order
+    for japanese_name in INPUT_METADATA_ORDER_JA:
+        key = KEY_MAP_FROM_JA.get(japanese_name)
+        if not key:
+            continue # Skip if the Japanese name isn't in our map
+
+        # --- Skip dialogue_level if in idea mode ---
+        if mode == "idea" and key == "dialogue_level":
+            continue
+
+        value = metadata.get(key) # Get value using the internal key ('title', 'dialogue_level', etc.)
         if value:
-            if key in ["keywords", "genres"] and isinstance(value, list): # UI側のキー名で判定 (METADATA_MAPのキー)
-                if value: # Only add if list is not empty
-                    # `- ` を付けずに改行で結合 (データセット側に合わせる)
-                    output.append(f"# {japanese_name}:\n" + "\n".join(item for item in value))
-            elif isinstance(value, str) and value.strip(): # Handle text fields
+            # Handle list types (keywords, genres)
+            if key in ["keywords", "genres"] and isinstance(value, list):
+                    if value: # Only add if list is not empty
+                        # `- ` を付けずに改行で結合 (データセット側に合わせる)
+                        output.append(f"# {japanese_name}:\n" + "\n".join(item for item in value))
+            # Handle string types (title, synopsis, setting, plot, dialogue_level)
+            elif isinstance(value, str) and value.strip():
                  output.append(f"# {japanese_name}:\n{value.strip()}")
+            # Add other type handling here if necessary
+
     return "\n\n".join(output)
 
 def determine_task_and_instruction(
@@ -57,28 +82,39 @@ def determine_task_and_instruction(
         Tuple[str, str]: (task_type, instruction_text)
     """
     has_main_text = bool(main_text.strip())
-    # Check if any metadata value is non-empty (list or string)
-    has_metadata = any(
-        (isinstance(v, list) and v) or (isinstance(v, str) and v.strip())
-        for v in metadata.values()
+
+    # --- Determine Metadata Presence Explicitly ---
+    has_title = bool(metadata.get("title", "").strip())
+    has_keywords = bool(metadata.get("keywords", []))
+    has_genres = bool(metadata.get("genres", []))
+    has_synopsis = bool(metadata.get("synopsis", "").strip())
+    has_setting = bool(metadata.get("setting", "").strip())
+    has_plot = bool(metadata.get("plot", "").strip())
+    # dialogue_level key only exists in metadata if it's not "指定なし"
+    has_dialogue_level = "dialogue_level" in metadata
+
+    # Combine checks based on mode
+    # For generate/continue mode, any metadata counts
+    has_any_metadata_for_gen_cont = (
+        has_title or has_keywords or has_genres or has_synopsis or
+        has_setting or has_plot or has_dialogue_level
+    )
+    # For idea mode, exclude dialogue_level
+    has_any_metadata_for_idea = (
+        has_title or has_keywords or has_genres or has_synopsis or
+        has_setting or has_plot
     )
 
-    if current_mode == "generate": # Check mode directly
+    # --- Determine Task Type ---
+    task_type = "GEN_ZERO" # Default
+
+    if current_mode == "generate":
         if not has_main_text:
-            if has_metadata:
-                task_type = "GEN_INFO" # Generate new story with info
-            else:
-                task_type = "GEN_ZERO" # Generate new story without info
+            task_type = "GEN_INFO" if has_any_metadata_for_gen_cont else "GEN_ZERO"
         else: # has_main_text
-            if has_metadata:
-                task_type = "CONT_INFO" # Continue story with info
-            else:
-                task_type = "CONT_ZERO" # Continue story without info
-    elif current_mode == "idea": # Check idea mode
-        if has_metadata:
-            task_type = "IDEA_INFO" # Generate ideas with info
-        else:
-            task_type = "IDEA_ZERO" # Generate ideas without info
+            task_type = "CONT_INFO" if has_any_metadata_for_gen_cont else "CONT_ZERO"
+    elif current_mode == "idea":
+        task_type = "IDEA_INFO" if has_any_metadata_for_idea else "IDEA_ZERO"
     else:
         # Fallback or error handling for unknown mode
         print(f"Warning: Unknown mode '{current_mode}'. Defaulting to GEN_ZERO.")
@@ -107,7 +143,8 @@ def build_prompt(
         current_mode, main_text, metadata # Pass current_mode
     )
 
-    metadata_input_string = format_metadata(metadata)
+    # Pass current_mode to format_metadata to handle exclusion logic
+    metadata_input_string = format_metadata(metadata, mode=current_mode)
     internal_input = ""
 
     if task_type.startswith("GEN"):

@@ -215,6 +215,7 @@ class MenuHandler:
         required_ui = {
             'title': 'title_edit', 'keywords': 'keywords_widget', 'genres': 'genre_widget',
             'synopsis': 'synopsis_edit', 'setting': 'setting_edit', 'plot': 'plot_edit',
+            'dialogue_level': 'dialogue_level_combo', # Add dialogue level combo
             'main_text': 'main_text_edit', 'memo': 'memo_edit'
         }
         missing_attrs = [name for name, attr in required_ui.items() if not hasattr(self.main_window, attr)]
@@ -228,6 +229,7 @@ class MenuHandler:
             "synopsis": self.main_window.synopsis_edit.toPlainText(),
             "setting": self.main_window.setting_edit.toPlainText(),
             "plot": self.main_window.plot_edit.toPlainText(),
+            "dialogue_level": self.main_window.dialogue_level_combo.currentText(), # Save dialogue level
         }
         main_text = self.main_window.main_text_edit.toPlainText()
         memo_text = self.main_window.memo_edit.toPlainText()
@@ -244,6 +246,7 @@ class MenuHandler:
         required_ui = {
             'title': 'title_edit', 'keywords': 'keywords_widget', 'genres': 'genre_widget',
             'synopsis': 'synopsis_edit', 'setting': 'setting_edit', 'plot': 'plot_edit',
+            'dialogue_level': 'dialogue_level_combo', # Add dialogue level combo
             'main_text': 'main_text_edit', 'memo': 'memo_edit',
             'output_clear': 'output_text_edit', 'output_counter': 'output_block_counter'
         }
@@ -256,9 +259,11 @@ class MenuHandler:
         self.main_window.title_edit.setText(details.get("title", "") or "") # Ensure string
         self.main_window.keywords_widget.set_tags(details.get("keywords", []) or []) # Ensure list
         self.main_window.genre_widget.set_tags(details.get("genres", []) or []) # Ensure list
-        self.main_window.synopsis_edit.setPlainText(details.get("synopsis", "") or "") # Ensure string
-        self.main_window.setting_edit.setPlainText(details.get("setting", "") or "") # Ensure string
-        self.main_window.plot_edit.setPlainText(details.get("plot", "") or "") # Ensure string
+        self.main_window.synopsis_edit.setPlainText(details.get("synopsis", "") or "")
+        self.main_window.setting_edit.setPlainText(details.get("setting", "") or "")
+        self.main_window.plot_edit.setPlainText(details.get("plot", "") or "")
+        # Apply dialogue level safely, defaulting to "指定なし"
+        self.main_window.dialogue_level_combo.setCurrentText(details.get("dialogue_level", "指定なし") or "指定なし")
 
         # Apply main text and memo safely
         self.main_window.main_text_edit.setPlainText(data.get("main_text", "") or "") # Ensure string
