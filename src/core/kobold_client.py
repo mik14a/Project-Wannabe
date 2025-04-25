@@ -55,11 +55,16 @@ class KoboldClient:
             "temperature": self._current_settings.get("temperature"),
             "min_p": self._current_settings.get("min_p"),
             "top_p": self._current_settings.get("top_p"),
+            "top_k": self._current_settings.get("top_k"), # Add top_k from settings
             "rep_pen": self._current_settings.get("rep_pen"),
             "stop_sequence": self._current_settings.get("stop_sequences", []),
         }
         if generation_params:
             params_to_send.update(generation_params) # Apply overrides
+
+        # If top_k is 0 (disabled), remove it from the parameters to send
+        if params_to_send.get("top_k") == 0:
+            del params_to_send["top_k"]
 
         payload = {
             "prompt": prompt,

@@ -11,6 +11,7 @@ DEFAULT_SETTINGS = {
     "temperature": 0.15,
     "min_p": 0.1,
     "top_p": 0.95,
+    "top_k": 0, # Add Top-K setting (0 means disabled in many Kobold setups)
     "rep_pen": 1.0,
     "stop_sequences": ["[INST]", "[/INST]"], # Default stop sequences
     "infinite_generation_behavior": { # Add new setting for infinite generation behavior
@@ -18,7 +19,8 @@ DEFAULT_SETTINGS = {
         "generate": "manual" # "immediate" or "manual"
     },
     "transfer_to_main_mode": "cursor", # "cursor", "next_line_always", "next_line_eol"
-    "transfer_newlines_before": 0 # Number of empty lines to insert before transfer in next_line modes
+    "transfer_newlines_before": 0, # Number of empty lines to insert before transfer in next_line modes
+    "cont_prompt_order": "reference_first" # "text_first" or "reference_first" (Default: reference first)
 }
 
 def get_config_path() -> str:

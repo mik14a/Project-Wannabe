@@ -2,9 +2,10 @@
     "kobold_port": 5001,
     "max_length_idea": 800,
     "max_length_generate": 300,
-    "temperature": 0.5,
+    "temperature": 1.0,
     "min_p": 0.1,
     "top_p": 0.95,
+    "top_k": 0,
     "rep_pen": 1.1,
     "stop_sequences": [],
     "infinite_generation_behavior": {
@@ -13,6 +14,7 @@
     },
     "transfer_to_main_mode": "next_line_eol",
     "transfer_newlines_before": 0,
+    "cont_prompt_order": "reference_first",
     "max_length": 300,
     "font_family": "ＭＳ Ｐ明朝",
     "font_size": 12

@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
-                               QDoubleSpinBox, QTextEdit, QFormLayout,
+                               QDoubleSpinBox, QTextEdit, QFormLayout, QComboBox, # Add QComboBox
                                QDialogButtonBox, QWidget, QGroupBox, QRadioButton,
-                               QSpacerItem, QSizePolicy) # Add QSpacerItem, QSizePolicy
+                               QSpacerItem, QSizePolicy)
 from PySide6.QtCore import Slot # Import Slot
 from src.core.settings import load_settings, save_settings, DEFAULT_SETTINGS
 
@@ -90,6 +90,12 @@ class GenerationParamsDialog(QDialog):
         self.top_p_spinbox.setValue(self.current_settings.get("top_p", DEFAULT_SETTINGS["top_p"]))
         form_layout.addRow("Top P:", self.top_p_spinbox)
 
+        # top_k
+        self.top_k_spinbox = QSpinBox()
+        self.top_k_spinbox.setRange(0, 200) # 0 means disabled for KoboldCpp usually
+        self.top_k_spinbox.setValue(self.current_settings.get("top_k", DEFAULT_SETTINGS["top_k"]))
+        form_layout.addRow("Top K:", self.top_k_spinbox)
+
         # rep_pen
         self.rep_pen_spinbox = QDoubleSpinBox()
         self.rep_pen_spinbox.setRange(1.0, 5.0) # Adjust max as needed
@@ -109,6 +115,31 @@ class GenerationParamsDialog(QDialog):
         self.stop_seq_edit.setText("\n".join(stop_sequences))
         main_layout.addWidget(stop_seq_label)
         main_layout.addWidget(self.stop_seq_edit)
+
+        # --- Continuation Prompt Order Setting ---
+        cont_order_group = QGroupBox("継続タスクのプロンプト順序")
+        cont_order_layout = QVBoxLayout(cont_order_group)
+
+        self.cont_order_combo = QComboBox()
+        # Add items with display text and internal data
+        self.cont_order_combo.addItem("小説継続タスク: 本文との整合性を優先 (推奨)", "reference_first")
+        self.cont_order_combo.addItem("小説継続タスク: 詳細情報との整合性を優先", "text_first")
+
+        # Load initial setting and set combo box index
+        current_cont_order = self.current_settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
+        index_to_set = self.cont_order_combo.findData(current_cont_order)
+        if index_to_set != -1:
+            self.cont_order_combo.setCurrentIndex(index_to_set)
+
+        cont_order_layout.addWidget(self.cont_order_combo)
+
+        cont_order_desc_label = QLabel("(低コンテキスト設定では「詳細情報との整合性を優先」が有効な場合があります)")
+        cont_order_desc_label.setWordWrap(True) # Allow text wrapping
+        cont_order_layout.addWidget(cont_order_desc_label)
+
+        main_layout.addWidget(cont_order_group)
+        # --- End Continuation Prompt Order Setting ---
+
 
         # --- Infinite Generation Behavior Settings ---
         inf_gen_group = QGroupBox("無限生成中のプロンプト更新")
@@ -202,12 +233,16 @@ class GenerationParamsDialog(QDialog):
         self.current_settings["temperature"] = self.temp_spinbox.value()
         self.current_settings["min_p"] = self.min_p_spinbox.value()
         self.current_settings["top_p"] = self.top_p_spinbox.value()
+        self.current_settings["top_k"] = self.top_k_spinbox.value() # Save Top-K
         self.current_settings["rep_pen"] = self.rep_pen_spinbox.value()
 
         # Process stop sequences: split by newline, strip whitespace, remove empty lines
         stop_sequences_text = self.stop_seq_edit.toPlainText()
         stop_sequences_list = [line.strip() for line in stop_sequences_text.splitlines() if line.strip()]
         self.current_settings["stop_sequences"] = stop_sequences_list
+
+        # Save continuation prompt order setting
+        self.current_settings["cont_prompt_order"] = self.cont_order_combo.currentData()
 
         # Save infinite generation behavior settings
         inf_gen_behavior = self.current_settings.get("infinite_generation_behavior", {})

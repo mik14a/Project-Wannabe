@@ -238,17 +238,30 @@ class MainWindow(QMainWindow):
     # --- Generation Control Slots ---
     @Slot()
     def _trigger_single_generation(self):
-        """Starts a single generation task."""
-        if self.generation_status != "idle":
-            QMessageBox.warning(self, "生成中", "現在、別の生成が実行中です。")
+        """Starts a single generation task, or stops it if already running."""
+        if self.generation_status == "single_running":
+            # If single generation is running, stop it.
+            self._stop_current_generation()
             return
+        elif self.generation_status == "infinite_running":
+            # If infinite generation is running, show warning and do nothing.
+            QMessageBox.warning(self, "生成中", "現在、無限生成が実行中です。停止してから単発生成を開始してください。")
+            return
+        elif self.generation_status != "idle":
+             # Handle unexpected status (should ideally not happen)
+             QMessageBox.warning(self, "不明な状態", f"予期せぬ生成ステータスです: {self.generation_status}")
+             return
 
+        # Only proceed if status is idle
         self.generation_status = "single_running"
         self._update_ui_for_generation_start()
 
         main_text = self.main_text_edit.toPlainText()
         metadata = self._get_metadata_from_ui()
-        prompt = build_prompt(self.current_mode, main_text, metadata)
+        # Load settings to get the prompt order
+        settings = load_settings()
+        cont_order = settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
+        prompt = build_prompt(self.current_mode, main_text, metadata, cont_prompt_order=cont_order)
 
         separator = f"\n--- 生成ブロック {self.output_block_counter} ---\n"
         self._append_to_output(separator)
@@ -257,14 +270,21 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _toggle_infinite_generation(self):
-        """Starts or stops the infinite generation loop."""
+        """Starts/stops infinite generation, or stops single generation if running."""
         if self.generation_status == "infinite_running":
+            # If infinite is running, stop it.
             self._stop_current_generation()
+        elif self.generation_status == "single_running":
+            # If single is running, stop it.
+            self._stop_current_generation()
+            # Ensure the infinite gen button remains unchecked as we just stopped single gen
+            self.infinite_gen_action.setChecked(False)
         elif self.generation_status == "idle":
+            # If idle, start infinite generation.
             self._start_infinite_generation()
-        else: # single_running
-            QMessageBox.warning(self, "生成中", "現在、単発生成が実行中です。停止してから無限生成を開始してください。")
-            self.infinite_gen_action.setChecked(False) # Uncheck the button
+        else: # Handle unexpected status
+             QMessageBox.warning(self, "不明な状態", f"予期せぬ生成ステータスです: {self.generation_status}")
+             self.infinite_gen_action.setChecked(False) # Ensure button is unchecked
 
     def _start_infinite_generation(self):
         """Starts the infinite generation loop."""
@@ -274,7 +294,10 @@ class MainWindow(QMainWindow):
         # Initial prompt build (might be overwritten in loop if immediate update is on)
         main_text = self.main_text_edit.toPlainText()
         metadata = self._get_metadata_from_ui()
-        self.infinite_generation_prompt = build_prompt(self.current_mode, main_text, metadata)
+        # Load settings for initial prompt build
+        settings = load_settings()
+        cont_order = settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
+        self.infinite_generation_prompt = build_prompt(self.current_mode, main_text, metadata, cont_prompt_order=cont_order)
 
         self.generation_task = asyncio.ensure_future(self._run_infinite_generation_loop())
 
@@ -311,14 +334,18 @@ class MainWindow(QMainWindow):
              self.infinite_gen_action.setChecked(False) # Ensure infinite is unchecked
              self.status_bar.showMessage("単発生成中...")
 
-        self.single_gen_action.setEnabled(False)
-        self.infinite_gen_action.setEnabled(self.generation_status == "infinite_running") # Only enable stop for infinite
+        # Keep actions enabled so they can be used to stop generation
+        # self.single_gen_action.setEnabled(False) # Keep enabled
+        # self.infinite_gen_action.setEnabled(False) # Keep enabled
+        # The logic within the action handlers (_trigger_single_generation, _toggle_infinite_generation)
+        # will determine whether to start or stop based on self.generation_status.
 
     def _update_ui_for_generation_stop(self):
         """Updates UI elements when generation stops or completes."""
-        self.infinite_gen_action.setChecked(False)
-        self.single_gen_action.setEnabled(True)
-        self.infinite_gen_action.setEnabled(True)
+        self.infinite_gen_action.setChecked(False) # Ensure infinite toggle is unchecked
+        # Keep actions enabled
+        # self.single_gen_action.setEnabled(True)
+        # self.infinite_gen_action.setEnabled(True)
         # Status message is set by the calling function (_stop_current_generation or async methods)
 
 
@@ -382,7 +409,10 @@ class MainWindow(QMainWindow):
                 if update_behavior == "immediate":
                     main_text = self.main_text_edit.toPlainText()
                     metadata = self._get_metadata_from_ui()
-                    current_prompt = build_prompt(self.current_mode, main_text, metadata)
+                    # Load settings again inside loop for immediate update
+                    settings = load_settings()
+                    cont_order = settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
+                    current_prompt = build_prompt(self.current_mode, main_text, metadata, cont_prompt_order=cont_order)
                     if not current_prompt:
                          print("Warning: Rebuilt prompt for immediate update is empty. Skipping generation cycle.")
                          await asyncio.sleep(0.5) # Avoid busy-waiting

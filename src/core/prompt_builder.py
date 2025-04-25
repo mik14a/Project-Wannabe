@@ -89,12 +89,19 @@ def determine_task_and_instruction(
 
 
 def build_prompt(
-    current_mode: str, # Changed from is_details_tab_selected
+    current_mode: str,
     main_text: str,
-    metadata: Dict[str, str | list[str]]
+    metadata: Dict[str, str | list[str]],
+    cont_prompt_order: str = "reference_first" # Add setting for CONT order, default to reference first
 ) -> str:
     """
-    Builds the final prompt string to be sent to KoboldCpp based on UI state.
+    Builds the final prompt string to be sent to KoboldCpp based on UI state and settings.
+
+    Args:
+        current_mode: The current operation mode ('generate' or 'idea').
+        main_text: The main text input from the UI.
+        metadata: The detailed information (title, keywords, etc.) from the UI.
+        cont_prompt_order: The desired order for continuation prompts ('text_first' or 'reference_first').
     """
     task_type, instruction_text = determine_task_and_instruction(
         current_mode, main_text, metadata # Pass current_mode
@@ -106,14 +113,23 @@ def build_prompt(
     if task_type.startswith("GEN"):
         internal_input = metadata_input_string
     elif task_type.startswith("CONT"):
-        # Prepare context for continuation
-        # Consider limiting main_text length if it's very long
-        context = f"【本文】\n```\n{main_text.strip()}\n```"
-        if metadata_input_string:
-            context += f"\n\n【参考情報】\n```\n{metadata_input_string}\n```"
+        # Prepare context for continuation based on the selected order
+        main_text_block = f"【本文】\n```\n{main_text.strip()}\n```"
+        reference_block = f"【参考情報】\n```\n{metadata_input_string}\n```" if metadata_input_string else ""
+
+        if reference_block:
+            if cont_prompt_order == "text_first":
+                # Order: Text -> Reference
+                context = f"{main_text_block}\n\n{reference_block}"
+            else: # Default to reference_first (Reference -> Text)
+                context = f"{reference_block}\n\n{main_text_block}"
+        else:
+            # If no reference info, just use the main text block
+            context = main_text_block
+
         internal_input = context
     elif task_type.startswith("IDEA"):
-        internal_input = metadata_input_string # Already formatted
+        internal_input = metadata_input_string # Already formatted for IDEA task
 
     # --- Final Prompt Formatting (Mistral Instruct style) ---
     if internal_input:
@@ -123,31 +139,47 @@ def build_prompt(
 
     return prompt
 
-# --- Example Usage ---
+# --- Example Usage (Updated) ---
 if __name__ == "__main__":
-    # Scenario 1: Generate new story with metadata
+    # Scenario 1: Generate new story with metadata (cont_prompt_order doesn't apply)
     meta1 = {"title": "星降る夜の冒険", "keywords": ["ファンタジー", "魔法"], "synopsis": "見習い魔法使いのリナが、失われた星のかけらを探す旅に出る。"}
     prompt1 = build_prompt(current_mode="generate", main_text="", metadata=meta1)
     print("--- Scenario 1: GEN_INFO ---")
     print(prompt1)
     print("-" * 20)
 
-    # Scenario 2: Continue story with no metadata
+    # Scenario 2: Continue story with no metadata (cont_prompt_order doesn't apply)
     text2 = "リナは杖を握りしめ、暗い森へと足を踏み入れた。"
     prompt2 = build_prompt(current_mode="generate", main_text=text2, metadata={})
     print("--- Scenario 2: CONT_ZERO ---")
     print(prompt2)
     print("-" * 20)
 
-    # Scenario 3: Generate ideas with some metadata
+    # Scenario 3: Generate ideas with some metadata (cont_prompt_order doesn't apply)
     meta3 = {"genres": ["SF", "学園"], "setting": "近未来の日本。特殊能力を持つ生徒が集まる高校。"}
     prompt3 = build_prompt(current_mode="idea", main_text="", metadata=meta3)
     print("--- Scenario 3: IDEA_INFO ---")
     print(prompt3)
     print("-" * 20)
 
-    # Scenario 4: Generate new story with no metadata
+    # Scenario 4: Generate new story with no metadata (cont_prompt_order doesn't apply)
     prompt4 = build_prompt(current_mode="generate", main_text="", metadata={})
     print("--- Scenario 4: GEN_ZERO ---")
     print(prompt4)
+    print("-" * 20)
+
+    # Scenario 5: Continue story WITH metadata, order: text_first
+    text5 = "古い地図を広げると、そこには見たこともない島が描かれていた。"
+    meta5 = {"keywords": ["冒険", "宝探し"], "setting": "南海の孤島"}
+    prompt5 = build_prompt(current_mode="generate", main_text=text5, metadata=meta5, cont_prompt_order="text_first")
+    print("--- Scenario 5: CONT_INFO (text_first) ---")
+    print(prompt5)
+    print("-" * 20)
+
+    # Scenario 6: Continue story WITH metadata, order: reference_first (Default)
+    text6 = "古い地図を広げると、そこには見たこともない島が描かれていた。"
+    meta6 = {"keywords": ["冒険", "宝探し"], "setting": "南海の孤島"}
+    prompt6 = build_prompt(current_mode="generate", main_text=text6, metadata=meta6, cont_prompt_order="reference_first")
+    print("--- Scenario 6: CONT_INFO (reference_first) ---")
+    print(prompt6)
     print("-" * 20)
