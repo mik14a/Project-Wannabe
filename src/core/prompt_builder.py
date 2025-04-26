@@ -6,13 +6,13 @@ from .settings import load_settings, DEFAULT_SETTINGS # Import settings function
 INSTRUCTION_TEMPLATES = {
     "GEN_INFO": "以下の情報に基づいて小説本文を生成してください。",
     "GEN_ZERO": "自由に小説を生成してください。",
-    "CONT_INFO": "参考情報を基に以下の文章の続きを生成してください。",
-    "CONT_ZERO": "以下の文章の続きを生成してください。",
+    "CONT_INFO": "参考情報と本文を踏まえ、最後の文章の自然な続きとなるように小説を生成してください。", # Updated
+    "CONT_ZERO": "本文を踏まえ、最後の文章の自然な続きとなるように小説を生成してください。", # Updated
     "IDEA_INFO": "以下の情報に基づいて、完全な小説のアイデア（タイトル、キーワード、ジャンル、あらすじ、設定、プロット）を生成してください。",
     "IDEA_ZERO": "自由に小説のアイデア（タイトル、キーワード、ジャンル、あらすじ、設定、プロット）を生成してください。",
 }
 
-# INSTRUCTION_TEMPLATES = {
+# INSTRUCTION_TEMPLATES = { # Keep the old commented out section if needed for reference
 #     "GEN_INFO": "以下の情報を元に、新しい小説の冒頭部分を執筆してください。",
 #     "GEN_ZERO": "新しい小説の冒頭部分を執筆してください。",
 #     "CONT_INFO": "以下の本文の続きを、参考情報に基づいて執筆してください。",
@@ -70,8 +70,48 @@ def format_metadata(metadata: Dict[str, str | list[str]], mode: str = "generate"
 
     return "\n\n".join(output)
 
+
+def split_main_text(text: str) -> tuple[str, str]:
+    """
+    Splits the input text into the main part and the last ~3 lines (tail).
+
+    Args:
+        text: The main text input.
+
+    Returns:
+        A tuple containing (main_part_text, tail_text).
+        Returns (text, "") if the text has 3 or fewer lines.
+        Returns ("", "") if the input text is empty or only whitespace.
+    """
+    if not text or not text.strip():
+        return "", ""
+
+    lines = text.splitlines()
+    num_lines = len(lines)
+
+    if num_lines <= 3:
+        # If 3 lines or less, the whole text is considered the tail, main part is empty
+        # However, the prompt format expects the *last* part to be the tail.
+        # Let's adjust: if <=3 lines, main is empty, tail is everything.
+        # Re-joining and stripping ensures consistent formatting.
+        main_part_text = ""
+        tail_text = "\n".join(lines).strip()
+        # return "", text.strip() # Simpler alternative? Let's stick to join for consistency
+        return main_part_text, tail_text
+
+
+    num_tail_lines = 3 # Target 3 lines for the tail
+    tail_lines = lines[-num_tail_lines:]
+    main_part_lines = lines[:-num_tail_lines]
+
+    main_part_text = "\n".join(main_part_lines).strip()
+    tail_text = "\n".join(tail_lines).strip()
+
+    return main_part_text, tail_text
+
+
 def determine_task_and_instruction(
-    current_mode: str, # Changed from is_details_tab_selected
+    current_mode: str,
     main_text: str,
     metadata: Dict[str, str | list[str]]
 ) -> Tuple[str, str]:
@@ -122,79 +162,191 @@ def determine_task_and_instruction(
         task_type = "GEN_ZERO"
 
     instruction_text = INSTRUCTION_TEMPLATES.get(task_type, "指示が見つかりません。") # Fallback
+    # Returns the base instruction text without the rating part.
     return task_type, instruction_text
 
 
 def build_prompt(
     current_mode: str,
     main_text: str,
-    metadata: Dict[str, str | list[str]],
-    cont_prompt_order: str = "reference_first", # Add setting for CONT order, default to reference first
-    rating_override: Optional[str] = None # Add optional rating override from UI
+    ui_data: dict, # Changed from metadata and rating_override
+    cont_prompt_order: str = "reference_first" # Keep this setting
 ) -> str:
     """
-    Builds the final prompt string to be sent to KoboldCpp based on UI state and settings.
+    Builds the final prompt string based on UI state, settings, and the new format.
 
     Args:
         current_mode: The current operation mode ('generate' or 'idea').
         main_text: The main text input from the UI.
-        metadata: The detailed information (title, keywords, etc.) from the UI.
+        ui_data: Dictionary containing metadata, rating, and authors_note from the UI.
         cont_prompt_order: The desired order for continuation prompts ('text_first' or 'reference_first').
-        rating_override: The rating selected in the UI, if any. Overrides the default setting.
     """
+    # --- Extract data from ui_data ---
+    metadata = ui_data.get("metadata", {})
+    rating_override = ui_data.get("rating") # Rating from UI details tab
+    authors_note = ui_data.get("authors_note", "")
+
     # --- Determine rating to use ---
     if rating_override:
-        current_rating = rating_override
+        rating_to_use = rating_override
     else:
         # Load default rating from settings if no override is provided
         settings = load_settings()
-        current_rating = settings.get("default_rating", DEFAULT_SETTINGS["default_rating"])
+        rating_to_use = settings.get("default_rating", DEFAULT_SETTINGS["default_rating"])
 
-    # --- Determine base instruction ---
-    task_type, instruction_text = determine_task_and_instruction(
-        current_mode, main_text, metadata # Pass current_mode
+    # --- Determine base instruction (without rating) ---
+    task_type, base_instruction_text = determine_task_and_instruction(
+        current_mode, main_text, metadata # Pass metadata extracted from ui_data
     )
 
-    # --- Append rating to instruction ---
-    rating_suffix = f" レーティング: {current_rating}" # Note the leading space
-    instruction_text += rating_suffix
-
+    # --- Format metadata string ---
     # Pass current_mode to format_metadata to handle exclusion logic
     metadata_input_string = format_metadata(metadata, mode=current_mode)
     internal_input = ""
 
-    if task_type.startswith("GEN"):
+    # --- Build internal_input based on task type ---
+    if task_type.startswith("GEN") or task_type.startswith("IDEA"):
+        # GEN and IDEA tasks use only metadata as input (existing logic)
         internal_input = metadata_input_string
     elif task_type.startswith("CONT"):
-        # Prepare context for continuation based on the selected order
-        main_text_block = f"【本文】\n```\n{main_text.strip()}\n```"
-        reference_block = f"【参考情報】\n```\n{metadata_input_string}\n```" if metadata_input_string else ""
+        # CONT tasks use the new complex structure
+        try:
+            main_part, tail = split_main_text(main_text)
+        except Exception as e:
+            print(f"Error splitting main text: {e}")
+            # Fallback: Use the original main_text as the main part, empty tail
+            main_part = main_text.strip()
+            tail = ""
 
-        if reference_block:
-            if cont_prompt_order == "text_first":
-                # Order: Text -> Reference
-                context = f"{main_text_block}\n\n{reference_block}"
-            else: # Default to reference_first (Reference -> Text)
-                context = f"{reference_block}\n\n{main_text_block}"
-        else:
-            # If no reference info, just use the main text block
-            context = main_text_block
+        # Create blocks (handle empty cases by setting to None)
+        main_part_block = f"【本文】\n```\n{main_part}\n```" if main_part else None
+        reference_block = f"【参考情報】\n```\n{metadata_input_string}\n```" if metadata_input_string else None
+        authors_note_block = f"【オーサーズノート】\n```\n{authors_note.strip()}\n```" if authors_note.strip() else None
 
-        internal_input = context
-    elif task_type.startswith("IDEA"):
-        internal_input = metadata_input_string # Already formatted for IDEA task
+        input_parts = []
+
+        # 1. Add Reference and Main Part based on order
+        if cont_prompt_order == 'reference_first':
+            if reference_block: input_parts.append(reference_block)
+            if main_part_block: input_parts.append(main_part_block)
+        else: # 'text_first'
+            if main_part_block: input_parts.append(main_part_block)
+            if reference_block: input_parts.append(reference_block)
+
+        # 2. Add Author's Note
+        if authors_note_block:
+            input_parts.append(authors_note_block)
+
+        # 3. Add Tail Text (only if it's not empty after stripping)
+        if tail: # tail is already stripped by split_main_text
+            input_parts.append(tail)
+
+        # Join parts with a single newline, matching integrate_authors_notes.py
+        # Filter out None values before joining
+        internal_input = "\n".join(filter(None, input_parts))
 
     # --- Final Prompt Formatting (Mistral Instruct style) ---
+    # Append rating to the base instruction
+    final_instruction = f"{base_instruction_text} レーティング: {rating_to_use}"
+
     if internal_input:
-        prompt = f"<s>[INST] {instruction_text}\n\n{internal_input} [/INST]"
+        # Ensure there's a newline between instruction and input if input exists
+        prompt = f"<s>[INST] {final_instruction}\n\n{internal_input} [/INST]"
     else:
-        prompt = f"<s>[INST] {instruction_text} [/INST]" # No input section if empty
+        # No extra newline if there's no input
+        prompt = f"<s>[INST] {final_instruction} [/INST]"
 
     return prompt
 
-# --- Example Usage (Updated) ---
+# --- Example Usage (Updated for new build_prompt signature) ---
 if __name__ == "__main__":
-    # Scenario 1: Generate new story with metadata (cont_prompt_order doesn't apply)
+    # Example ui_data structure
+    ui_data_gen_meta = {
+        "metadata": {"title": "星降る夜の冒険", "keywords": ["ファンタジー", "魔法"], "synopsis": "見習い魔法使いのリナが、失われた星のかけらを探す旅に出る。"},
+        "rating": "general",
+        "authors_note": ""
+    }
+    ui_data_cont_zero = {
+        "metadata": {},
+        "rating": "general",
+        "authors_note": "次はもっとアクションシーンを増やしたい。"
+    }
+    ui_data_idea_meta = {
+        "metadata": {"genres": ["SF", "学園"], "setting": "近未来の日本。特殊能力を持つ生徒が集まる高校。"},
+        "rating": "general",
+        "authors_note": ""
+    }
+    ui_data_gen_zero = {
+        "metadata": {},
+        "rating": "r18",
+        "authors_note": ""
+    }
+    ui_data_cont_meta_text_first = {
+        "metadata": {"keywords": ["冒険", "宝探し"], "setting": "南海の孤島"},
+        "rating": "general",
+        "authors_note": "地図の謎を強調する。\n登場人物の驚きを描写。"
+    }
+    ui_data_cont_meta_ref_first = {
+        "metadata": {"keywords": ["冒険", "宝探し"], "setting": "南海の孤島"},
+        "rating": "general",
+        "authors_note": "地図の謎を強調する。\n登場人物の驚きを描写。"
+    }
+
+
+    # Scenario 1: Generate new story with metadata
+    prompt1 = build_prompt(current_mode="generate", main_text="", ui_data=ui_data_gen_meta)
+    print("--- Scenario 1: GEN_INFO ---")
+    print(prompt1)
+    print("-" * 20)
+
+    # Scenario 2: Continue story with no metadata (but with author's note)
+    text2 = "リナは杖を握りしめ、暗い森へと足を踏み入れた。\n風が不気味に木々を揺らす。\n何かが潜んでいる気配がした。\n彼女は息をのんだ。" # 4 lines
+    prompt2 = build_prompt(current_mode="generate", main_text=text2, ui_data=ui_data_cont_zero)
+    print("--- Scenario 2: CONT_ZERO (with Author's Note) ---")
+    print(prompt2)
+    print("-" * 20)
+
+    # Scenario 3: Generate ideas with some metadata
+    prompt3 = build_prompt(current_mode="idea", main_text="", ui_data=ui_data_idea_meta)
+    print("--- Scenario 3: IDEA_INFO ---")
+    print(prompt3)
+    print("-" * 20)
+
+    # Scenario 4: Generate new story with no metadata (R18 rating)
+    prompt4 = build_prompt(current_mode="generate", main_text="", ui_data=ui_data_gen_zero)
+    print("--- Scenario 4: GEN_ZERO (R18) ---")
+    print(prompt4)
+    print("-" * 20)
+
+    # Scenario 5: Continue story WITH metadata & Author's Note, order: text_first
+    text5 = "古い地図を広げると、そこには見たこともない島が描かれていた。\nインクが滲んで、一部は判読できない。\n島の中心には奇妙な印がある。\nこれは一体……？" # 4 lines
+    prompt5 = build_prompt(current_mode="generate", main_text=text5, ui_data=ui_data_cont_meta_text_first, cont_prompt_order="text_first")
+    print("--- Scenario 5: CONT_INFO (text_first) ---")
+    print(prompt5)
+    print("-" * 20)
+
+    # Scenario 6: Continue story WITH metadata & Author's Note, order: reference_first (Default)
+    text6 = "古い地図を広げると、そこには見たこともない島が描かれていた。\nインクが滲んで、一部は判読できない。\n島の中心には奇妙な印がある。\nこれは一体……？" # 4 lines
+    prompt6 = build_prompt(current_mode="generate", main_text=text6, ui_data=ui_data_cont_meta_ref_first, cont_prompt_order="reference_first")
+    print("--- Scenario 6: CONT_INFO (reference_first) ---")
+    print(prompt6)
+    print("-" * 20)
+
+    # Scenario 7: Continue story with only 2 lines of text
+    text7 = "扉を開けると、そこは真っ暗だった。\n冷たい空気が頬を撫でる。" # 2 lines
+    ui_data7 = { "metadata": {}, "rating": "general", "authors_note": "ホラー要素を強めに" }
+    prompt7 = build_prompt(current_mode="generate", main_text=text7, ui_data=ui_data7)
+    print("--- Scenario 7: CONT_ZERO (Short text) ---")
+    print(prompt7)
+    print("-" * 20)
+
+    # Scenario 8: Continue story with empty author's note
+    text8 = "リナは杖を握りしめ、暗い森へと足を踏み入れた。\n風が不気味に木々を揺らす。\n何かが潜んでいる気配がした。\n彼女は息をのんだ。" # 4 lines
+    ui_data8 = { "metadata": {"keywords": ["森", "夜"]}, "rating": "general", "authors_note": "   " } # Empty note
+    prompt8 = build_prompt(current_mode="generate", main_text=text8, ui_data=ui_data8)
+    print("--- Scenario 8: CONT_INFO (Empty Author's Note) ---")
+    print(prompt8)
+    print("-" * 20)
     meta1 = {"title": "星降る夜の冒険", "keywords": ["ファンタジー", "魔法"], "synopsis": "見習い魔法使いのリナが、失われた星のかけらを探す旅に出る。"}
     prompt1 = build_prompt(current_mode="generate", main_text="", metadata=meta1)
     print("--- Scenario 1: GEN_INFO ---")

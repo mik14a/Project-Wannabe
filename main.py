@@ -303,21 +303,20 @@ class MainWindow(QMainWindow):
         self._update_ui_for_generation_start()
 
         main_text = self.main_text_edit.toPlainText()
-        ui_data = self._get_metadata_from_ui() # Get data dict from UI
-        metadata = ui_data["metadata"]
-        selected_rating = ui_data["rating"]
-        # authors_note = ui_data["authors_note"] # Not used yet in build_prompt
+        ui_data = self._get_metadata_from_ui() # Get data dict from UI (includes metadata, rating, authors_note)
+        # authors_note = ui_data["authors_note"] # Extracted but used inside build_prompt now
 
-        # Load settings to get the prompt order (rating is now passed explicitly)
+        # Load settings to get the prompt order
         settings = load_settings()
         cont_order = settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
-        # Pass the selected rating from the details tab to build_prompt
+
+        # Call build_prompt with the new signature
         prompt = build_prompt(
-            self.current_mode,
-            main_text,
-            metadata,
-            cont_prompt_order=cont_order,
-            rating_override=selected_rating # Pass the rating from UI
+            current_mode=self.current_mode,
+            main_text=main_text,
+            ui_data=ui_data, # Pass the whole ui_data dictionary
+            cont_prompt_order=cont_order
+            # rating_override is no longer needed here, handled inside build_prompt
         )
 
         separator = f"\n--- 生成ブロック {self.output_block_counter} ---\n"
@@ -350,21 +349,20 @@ class MainWindow(QMainWindow):
 
         # Initial prompt build (might be overwritten in loop if immediate update is on)
         main_text = self.main_text_edit.toPlainText()
-        ui_data = self._get_metadata_from_ui() # Get data dict from UI
-        metadata = ui_data["metadata"]
-        selected_rating = ui_data["rating"]
-        # authors_note = ui_data["authors_note"] # Not used yet in build_prompt
+        ui_data = self._get_metadata_from_ui() # Get data dict from UI (includes metadata, rating, authors_note)
+        # authors_note = ui_data["authors_note"] # Extracted but used inside build_prompt now
 
-        # Load settings for initial prompt build (rating is now passed explicitly)
+        # Load settings for initial prompt build
         settings = load_settings()
         cont_order = settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
-        # Pass the selected rating from the details tab to build_prompt
+
+        # Call build_prompt with the new signature for the initial prompt
         self.infinite_generation_prompt = build_prompt(
-            self.current_mode,
-            main_text,
-            metadata,
-            cont_prompt_order=cont_order,
-            rating_override=selected_rating # Pass the rating from UI
+            current_mode=self.current_mode,
+            main_text=main_text,
+            ui_data=ui_data, # Pass the whole ui_data dictionary
+            cont_prompt_order=cont_order
+            # rating_override is no longer needed here, handled inside build_prompt
         )
 
         self.generation_task = asyncio.ensure_future(self._run_infinite_generation_loop())
@@ -476,21 +474,20 @@ class MainWindow(QMainWindow):
                 # --- Rebuild prompt if behavior is 'immediate' ---
                 if update_behavior == "immediate":
                     main_text = self.main_text_edit.toPlainText()
-                    ui_data = self._get_metadata_from_ui() # Get data dict from UI
-                    metadata = ui_data["metadata"]
-                    selected_rating = ui_data["rating"]
-                    # authors_note = ui_data["authors_note"] # Not used yet in build_prompt
+                    ui_data = self._get_metadata_from_ui() # Get data dict from UI (includes metadata, rating, authors_note)
+                    # authors_note = ui_data["authors_note"] # Extracted but used inside build_prompt now
 
                     # Load settings again inside loop for immediate update (cont_order)
                     settings = load_settings()
                     cont_order = settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
-                    # Pass the selected rating from the details tab to build_prompt
+
+                    # Call build_prompt with the new signature inside the loop
                     current_prompt = build_prompt(
-                        self.current_mode,
-                        main_text,
-                        metadata,
-                        cont_prompt_order=cont_order,
-                        rating_override=selected_rating # Pass the rating from UI
+                        current_mode=self.current_mode,
+                        main_text=main_text,
+                        ui_data=ui_data, # Pass the whole ui_data dictionary
+                        cont_prompt_order=cont_order
+                        # rating_override is no longer needed here, handled inside build_prompt
                     )
                     if not current_prompt:
                          print("Warning: Rebuilt prompt for immediate update is empty. Skipping generation cycle.")
