@@ -224,6 +224,18 @@ class MainWindow(QMainWindow):
         plot_section.content_layout.addLayout(plot_layout)
         details_layout.addWidget(plot_section)
 
+        # Author's Note
+        authors_note_section = CollapsibleSection("オーサーズノート")
+        authors_note_layout = QHBoxLayout()
+        self.authors_note_edit = QPlainTextEdit()
+        self.authors_note_edit.setPlaceholderText("次のシーンへの指示や要点などを入力...")
+        # Optionally set a fixed height or leave it default
+        # self.authors_note_edit.setFixedHeight(100)
+        authors_note_layout.addWidget(self.authors_note_edit)
+        # No transfer button needed for author's note typically
+        authors_note_section.content_layout.addLayout(authors_note_layout)
+        details_layout.addWidget(authors_note_section)
+
         # Dialogue Level
         dialogue_section = CollapsibleSection("セリフ量")
         dialogue_layout = QHBoxLayout()
@@ -291,7 +303,11 @@ class MainWindow(QMainWindow):
         self._update_ui_for_generation_start()
 
         main_text = self.main_text_edit.toPlainText()
-        metadata, selected_rating = self._get_metadata_from_ui() # Get rating from UI
+        ui_data = self._get_metadata_from_ui() # Get data dict from UI
+        metadata = ui_data["metadata"]
+        selected_rating = ui_data["rating"]
+        # authors_note = ui_data["authors_note"] # Not used yet in build_prompt
+
         # Load settings to get the prompt order (rating is now passed explicitly)
         settings = load_settings()
         cont_order = settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
@@ -334,7 +350,11 @@ class MainWindow(QMainWindow):
 
         # Initial prompt build (might be overwritten in loop if immediate update is on)
         main_text = self.main_text_edit.toPlainText()
-        metadata, selected_rating = self._get_metadata_from_ui() # Get rating from UI
+        ui_data = self._get_metadata_from_ui() # Get data dict from UI
+        metadata = ui_data["metadata"]
+        selected_rating = ui_data["rating"]
+        # authors_note = ui_data["authors_note"] # Not used yet in build_prompt
+
         # Load settings for initial prompt build (rating is now passed explicitly)
         settings = load_settings()
         cont_order = settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
@@ -456,7 +476,11 @@ class MainWindow(QMainWindow):
                 # --- Rebuild prompt if behavior is 'immediate' ---
                 if update_behavior == "immediate":
                     main_text = self.main_text_edit.toPlainText()
-                    metadata, selected_rating = self._get_metadata_from_ui() # Get rating from UI
+                    ui_data = self._get_metadata_from_ui() # Get data dict from UI
+                    metadata = ui_data["metadata"]
+                    selected_rating = ui_data["rating"]
+                    # authors_note = ui_data["authors_note"] # Not used yet in build_prompt
+
                     # Load settings again inside loop for immediate update (cont_order)
                     settings = load_settings()
                     cont_order = settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
@@ -530,8 +554,8 @@ class MainWindow(QMainWindow):
         if is_at_bottom:
             v_bar.setValue(v_bar.maximum())
 
-    def _get_metadata_from_ui(self) -> tuple[dict, str]:
-        """Retrieves metadata values and the selected rating from the UI widgets."""
+    def _get_metadata_from_ui(self) -> dict:
+        """Retrieves metadata, rating, and author's note from the UI widgets."""
         metadata = { # Initialize the dictionary first
             "title": self.title_edit.text(),
             "keywords": self.keywords_widget.get_tags(),
@@ -547,8 +571,14 @@ class MainWindow(QMainWindow):
 
         # Get the selected rating from the details tab combo box
         selected_rating = self.rating_combo_details.currentData()
+        # Get the author's note
+        authors_note = self.authors_note_edit.toPlainText()
 
-        return metadata, selected_rating # Return metadata dict and rating string
+        return {
+            "metadata": metadata,
+            "rating": selected_rating,
+            "authors_note": authors_note
+        }
 
     async def _cleanup(self): # Make cleanup async
         """Closes the Kobold client when the application is about to quit."""

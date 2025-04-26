@@ -217,6 +217,7 @@ class MenuHandler:
             'synopsis': 'synopsis_edit', 'setting': 'setting_edit', 'plot': 'plot_edit',
             'dialogue_level': 'dialogue_level_combo',
             'rating': 'rating_combo_details', # Add rating combo from details tab
+            'authors_note': 'authors_note_edit', # Add authors_note edit
             'main_text': 'main_text_edit', 'memo': 'memo_edit'
         }
         missing_attrs = [name for name, attr in required_ui.items() if not hasattr(self.main_window, attr)]
@@ -232,6 +233,7 @@ class MenuHandler:
             "plot": self.main_window.plot_edit.toPlainText(),
             "dialogue_level": self.main_window.dialogue_level_combo.currentText(),
             "rating": self.main_window.rating_combo_details.currentData(), # Save selected rating data
+            "authors_note": self.main_window.authors_note_edit.toPlainText(), # Add authors_note
         }
         main_text = self.main_window.main_text_edit.toPlainText()
         memo_text = self.main_window.memo_edit.toPlainText()
@@ -248,6 +250,7 @@ class MenuHandler:
         required_ui = {
             'title': 'title_edit', 'keywords': 'keywords_widget', 'genres': 'genre_widget',
             'synopsis': 'synopsis_edit', 'setting': 'setting_edit', 'plot': 'plot_edit',
+            'authors_note': 'authors_note_edit', # Add authors_note edit check
             'dialogue_level': 'dialogue_level_combo',
             'rating': 'rating_combo_details', # Add rating combo from details tab
             'main_text': 'main_text_edit', 'memo': 'memo_edit',
@@ -265,6 +268,7 @@ class MenuHandler:
         self.main_window.synopsis_edit.setPlainText(details.get("synopsis", "") or "")
         self.main_window.setting_edit.setPlainText(details.get("setting", "") or "")
         self.main_window.plot_edit.setPlainText(details.get("plot", "") or "")
+        self.main_window.authors_note_edit.setPlainText(details.get("authors_note", "") or "") # Add authors_note
         # Apply dialogue level safely
         self.main_window.dialogue_level_combo.setCurrentText(details.get("dialogue_level", "指定なし") or "指定なし")
         # Apply rating safely
