@@ -1,8 +1,8 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
-                               QDoubleSpinBox, QTextEdit, QFormLayout, QComboBox, # Add QComboBox
+                               QDoubleSpinBox, QTextEdit, QFormLayout, QComboBox,
                                QDialogButtonBox, QWidget, QGroupBox, QRadioButton,
                                QSpacerItem, QSizePolicy)
-from PySide6.QtCore import Slot # Import Slot
+from PySide6.QtCore import Slot
 from src.core.settings import load_settings, save_settings, DEFAULT_SETTINGS
 
 class KoboldConfigDialog(QDialog):
@@ -103,6 +103,19 @@ class GenerationParamsDialog(QDialog):
         self.rep_pen_spinbox.setDecimals(2)
         self.rep_pen_spinbox.setValue(self.current_settings.get("rep_pen", DEFAULT_SETTINGS["rep_pen"]))
         form_layout.addRow("Repetition Penalty:", self.rep_pen_spinbox)
+
+        # --- Default Rating Setting ---
+        rating_label = QLabel("デフォルトレーティング:")
+        self.rating_combo = QComboBox()
+        self.rating_combo.addItem("General (全年齢)", "general")
+        self.rating_combo.addItem("R-18", "r18")
+        form_layout.addRow(rating_label, self.rating_combo)
+        # Load initial rating setting
+        current_rating = self.current_settings.get("default_rating", DEFAULT_SETTINGS["default_rating"])
+        rating_index = self.rating_combo.findData(current_rating)
+        if rating_index != -1:
+            self.rating_combo.setCurrentIndex(rating_index)
+        # --- End Default Rating Setting ---
 
         main_layout.addLayout(form_layout)
 
@@ -258,6 +271,9 @@ class GenerationParamsDialog(QDialog):
         else:
             self.current_settings["transfer_to_main_mode"] = "cursor"
         self.current_settings["transfer_newlines_before"] = self.transfer_newlines_spinbox.value()
+
+        # Save default rating setting
+        self.current_settings["default_rating"] = self.rating_combo.currentData()
 
         save_settings(self.current_settings)
         super().accept()

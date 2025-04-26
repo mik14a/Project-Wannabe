@@ -20,7 +20,8 @@ DEFAULT_SETTINGS = {
     },
     "transfer_to_main_mode": "cursor", # "cursor", "next_line_always", "next_line_eol"
     "transfer_newlines_before": 0, # Number of empty lines to insert before transfer in next_line modes
-    "cont_prompt_order": "reference_first" # "text_first" or "reference_first" (Default: reference first)
+    "cont_prompt_order": "reference_first", # "text_first" or "reference_first" (Default: reference first)
+    "default_rating": "general" # Add default rating setting: "general" or "r18"
 }
 
 def get_config_path() -> str:

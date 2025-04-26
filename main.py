@@ -143,6 +143,26 @@ class MainWindow(QMainWindow):
         details_layout = QVBoxLayout(scroll_content_widget)
         details_layout.setSpacing(5)
 
+        # --- Rating Selection (Moved to top) ---
+        rating_section = CollapsibleSection("レーティング (生成時)")
+        rating_layout = QHBoxLayout()
+        rating_label = QLabel("レーティング:")
+        self.rating_combo_details = QComboBox()
+        self.rating_combo_details.addItem("General (全年齢)", "general")
+        self.rating_combo_details.addItem("R-18", "r18")
+        rating_layout.addWidget(rating_label)
+        rating_layout.addWidget(self.rating_combo_details)
+        rating_layout.addStretch()
+        rating_section.content_layout.addLayout(rating_layout)
+        details_layout.addWidget(rating_section)
+        # Load initial rating from settings
+        initial_settings = load_settings()
+        initial_rating = initial_settings.get("default_rating", DEFAULT_SETTINGS["default_rating"])
+        initial_rating_index = self.rating_combo_details.findData(initial_rating)
+        if initial_rating_index != -1:
+            self.rating_combo_details.setCurrentIndex(initial_rating_index)
+        # --- End Rating Selection ---
+
         # Title
         title_section = CollapsibleSection("タイトル")
         title_layout = QHBoxLayout()
@@ -218,7 +238,6 @@ class MainWindow(QMainWindow):
         dialogue_section.content_layout.addLayout(dialogue_layout)
         details_layout.addWidget(dialogue_section)
 
-
         details_layout.addStretch()
 
     def _create_memo_tab(self):
@@ -272,11 +291,18 @@ class MainWindow(QMainWindow):
         self._update_ui_for_generation_start()
 
         main_text = self.main_text_edit.toPlainText()
-        metadata = self._get_metadata_from_ui()
-        # Load settings to get the prompt order
+        metadata, selected_rating = self._get_metadata_from_ui() # Get rating from UI
+        # Load settings to get the prompt order (rating is now passed explicitly)
         settings = load_settings()
         cont_order = settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
-        prompt = build_prompt(self.current_mode, main_text, metadata, cont_prompt_order=cont_order)
+        # Pass the selected rating from the details tab to build_prompt
+        prompt = build_prompt(
+            self.current_mode,
+            main_text,
+            metadata,
+            cont_prompt_order=cont_order,
+            rating_override=selected_rating # Pass the rating from UI
+        )
 
         separator = f"\n--- 生成ブロック {self.output_block_counter} ---\n"
         self._append_to_output(separator)
@@ -308,11 +334,18 @@ class MainWindow(QMainWindow):
 
         # Initial prompt build (might be overwritten in loop if immediate update is on)
         main_text = self.main_text_edit.toPlainText()
-        metadata = self._get_metadata_from_ui()
-        # Load settings for initial prompt build
+        metadata, selected_rating = self._get_metadata_from_ui() # Get rating from UI
+        # Load settings for initial prompt build (rating is now passed explicitly)
         settings = load_settings()
         cont_order = settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
-        self.infinite_generation_prompt = build_prompt(self.current_mode, main_text, metadata, cont_prompt_order=cont_order)
+        # Pass the selected rating from the details tab to build_prompt
+        self.infinite_generation_prompt = build_prompt(
+            self.current_mode,
+            main_text,
+            metadata,
+            cont_prompt_order=cont_order,
+            rating_override=selected_rating # Pass the rating from UI
+        )
 
         self.generation_task = asyncio.ensure_future(self._run_infinite_generation_loop())
 
@@ -423,11 +456,18 @@ class MainWindow(QMainWindow):
                 # --- Rebuild prompt if behavior is 'immediate' ---
                 if update_behavior == "immediate":
                     main_text = self.main_text_edit.toPlainText()
-                    metadata = self._get_metadata_from_ui()
-                    # Load settings again inside loop for immediate update
+                    metadata, selected_rating = self._get_metadata_from_ui() # Get rating from UI
+                    # Load settings again inside loop for immediate update (cont_order)
                     settings = load_settings()
                     cont_order = settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
-                    current_prompt = build_prompt(self.current_mode, main_text, metadata, cont_prompt_order=cont_order)
+                    # Pass the selected rating from the details tab to build_prompt
+                    current_prompt = build_prompt(
+                        self.current_mode,
+                        main_text,
+                        metadata,
+                        cont_prompt_order=cont_order,
+                        rating_override=selected_rating # Pass the rating from UI
+                    )
                     if not current_prompt:
                          print("Warning: Rebuilt prompt for immediate update is empty. Skipping generation cycle.")
                          await asyncio.sleep(0.5) # Avoid busy-waiting
@@ -490,8 +530,8 @@ class MainWindow(QMainWindow):
         if is_at_bottom:
             v_bar.setValue(v_bar.maximum())
 
-    def _get_metadata_from_ui(self) -> dict:
-        """Retrieves metadata values from the UI widgets."""
+    def _get_metadata_from_ui(self) -> tuple[dict, str]:
+        """Retrieves metadata values and the selected rating from the UI widgets."""
         metadata = { # Initialize the dictionary first
             "title": self.title_edit.text(),
             "keywords": self.keywords_widget.get_tags(),
@@ -504,7 +544,11 @@ class MainWindow(QMainWindow):
         selected_level = self.dialogue_level_combo.currentText()
         if selected_level != "指定なし":
             metadata["dialogue_level"] = selected_level # Add to the dictionary
-        return metadata # Return the potentially modified dictionary
+
+        # Get the selected rating from the details tab combo box
+        selected_rating = self.rating_combo_details.currentData()
+
+        return metadata, selected_rating # Return metadata dict and rating string
 
     async def _cleanup(self): # Make cleanup async
         """Closes the Kobold client when the application is about to quit."""

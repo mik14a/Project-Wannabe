@@ -215,7 +215,8 @@ class MenuHandler:
         required_ui = {
             'title': 'title_edit', 'keywords': 'keywords_widget', 'genres': 'genre_widget',
             'synopsis': 'synopsis_edit', 'setting': 'setting_edit', 'plot': 'plot_edit',
-            'dialogue_level': 'dialogue_level_combo', # Add dialogue level combo
+            'dialogue_level': 'dialogue_level_combo',
+            'rating': 'rating_combo_details', # Add rating combo from details tab
             'main_text': 'main_text_edit', 'memo': 'memo_edit'
         }
         missing_attrs = [name for name, attr in required_ui.items() if not hasattr(self.main_window, attr)]
@@ -229,7 +230,8 @@ class MenuHandler:
             "synopsis": self.main_window.synopsis_edit.toPlainText(),
             "setting": self.main_window.setting_edit.toPlainText(),
             "plot": self.main_window.plot_edit.toPlainText(),
-            "dialogue_level": self.main_window.dialogue_level_combo.currentText(), # Save dialogue level
+            "dialogue_level": self.main_window.dialogue_level_combo.currentText(),
+            "rating": self.main_window.rating_combo_details.currentData(), # Save selected rating data
         }
         main_text = self.main_window.main_text_edit.toPlainText()
         memo_text = self.main_window.memo_edit.toPlainText()
@@ -246,7 +248,8 @@ class MenuHandler:
         required_ui = {
             'title': 'title_edit', 'keywords': 'keywords_widget', 'genres': 'genre_widget',
             'synopsis': 'synopsis_edit', 'setting': 'setting_edit', 'plot': 'plot_edit',
-            'dialogue_level': 'dialogue_level_combo', # Add dialogue level combo
+            'dialogue_level': 'dialogue_level_combo',
+            'rating': 'rating_combo_details', # Add rating combo from details tab
             'main_text': 'main_text_edit', 'memo': 'memo_edit',
             'output_clear': 'output_text_edit', 'output_counter': 'output_block_counter'
         }
@@ -262,8 +265,16 @@ class MenuHandler:
         self.main_window.synopsis_edit.setPlainText(details.get("synopsis", "") or "")
         self.main_window.setting_edit.setPlainText(details.get("setting", "") or "")
         self.main_window.plot_edit.setPlainText(details.get("plot", "") or "")
-        # Apply dialogue level safely, defaulting to "指定なし"
+        # Apply dialogue level safely
         self.main_window.dialogue_level_combo.setCurrentText(details.get("dialogue_level", "指定なし") or "指定なし")
+        # Apply rating safely
+        loaded_rating = details.get("rating", "general") or "general" # Default to general if missing/empty
+        rating_index = self.main_window.rating_combo_details.findData(loaded_rating)
+        if rating_index != -1:
+            self.main_window.rating_combo_details.setCurrentIndex(rating_index)
+        else: # Fallback if loaded rating value is invalid
+            self.main_window.rating_combo_details.setCurrentIndex(self.main_window.rating_combo_details.findData("general"))
+
 
         # Apply main text and memo safely
         self.main_window.main_text_edit.setPlainText(data.get("main_text", "") or "") # Ensure string

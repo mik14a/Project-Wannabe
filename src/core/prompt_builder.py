@@ -1,4 +1,5 @@
 from typing import Dict, Optional, Tuple
+from .settings import load_settings, DEFAULT_SETTINGS # Import settings functions
 
 # --- Instruction Templates (Adjust based on the fine-tuned model's needs) ---
 # These are examples and should match the expected format of your LLM.
@@ -128,7 +129,8 @@ def build_prompt(
     current_mode: str,
     main_text: str,
     metadata: Dict[str, str | list[str]],
-    cont_prompt_order: str = "reference_first" # Add setting for CONT order, default to reference first
+    cont_prompt_order: str = "reference_first", # Add setting for CONT order, default to reference first
+    rating_override: Optional[str] = None # Add optional rating override from UI
 ) -> str:
     """
     Builds the final prompt string to be sent to KoboldCpp based on UI state and settings.
@@ -138,10 +140,24 @@ def build_prompt(
         main_text: The main text input from the UI.
         metadata: The detailed information (title, keywords, etc.) from the UI.
         cont_prompt_order: The desired order for continuation prompts ('text_first' or 'reference_first').
+        rating_override: The rating selected in the UI, if any. Overrides the default setting.
     """
+    # --- Determine rating to use ---
+    if rating_override:
+        current_rating = rating_override
+    else:
+        # Load default rating from settings if no override is provided
+        settings = load_settings()
+        current_rating = settings.get("default_rating", DEFAULT_SETTINGS["default_rating"])
+
+    # --- Determine base instruction ---
     task_type, instruction_text = determine_task_and_instruction(
         current_mode, main_text, metadata # Pass current_mode
     )
+
+    # --- Append rating to instruction ---
+    rating_suffix = f" レーティング: {current_rating}" # Note the leading space
+    instruction_text += rating_suffix
 
     # Pass current_mode to format_metadata to handle exclusion logic
     metadata_input_string = format_metadata(metadata, mode=current_mode)
