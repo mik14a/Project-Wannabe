@@ -61,10 +61,10 @@ class MenuHandler:
         file_menu.addAction(save_as_action)
 
         # Add a 'Save' action (optional, saves to current_project_path)
-        # save_action = QAction("保存", self.main_window)
-        # save_action.setShortcut(QKeySequence.Save)
-        # save_action.triggered.connect(self._save_project)
-        # file_menu.addAction(save_action)
+        save_action = QAction("保存", self.main_window)
+        save_action.setShortcut(QKeySequence.Save) # Ctrl+S
+        save_action.triggered.connect(self._save_project)
+        file_menu.addAction(save_action)
 
         file_menu.addSeparator()
 
@@ -129,18 +129,24 @@ class MenuHandler:
             QMessageBox.critical(self.main_window, "保存エラー", f"プロジェクトの保存に失敗しました:\n{e}")
 
 
-    # @Slot()
-    # def _save_project(self):
-    #     """Handles the 'File > Save' action."""
-    #     if not self.current_project_path:
-    #         self._save_project_as() # If no path, behave like Save As
-    #         return
-    #     try:
-    #         project_data = self._collect_project_data()
-    #         save_project_data(self.current_project_path, project_data)
-    #         self.main_window.status_bar.showMessage(f"プロジェクト '{os.path.basename(self.current_project_path)}' を上書き保存しました。", 3000)
-    #     except (ProjectIOError, ValueError) as e:
-    #         QMessageBox.critical(self.main_window, "保存エラー", f"プロジェクトの上書き保存に失敗しました:\n{e}")
+    @Slot()
+    def _save_project(self):
+        """Handles the 'File > Save' action."""
+        if not self.current_project_path:
+            # If no path is set (e.g., new project or opened without saving yet),
+            # delegate to Save As...
+            self._save_project_as()
+            return
+
+        # If a path exists, proceed with saving to that path
+        try:
+            project_data = self._collect_project_data()
+            save_project_data(self.current_project_path, project_data)
+            # Use os.path.basename to show only the filename in the status message
+            self.main_window.status_bar.showMessage(f"プロジェクト '{os.path.basename(self.current_project_path)}' を上書き保存しました。", 3000)
+        except (ProjectIOError, ValueError) as e:
+            QMessageBox.critical(self.main_window, "上書き保存エラー", f"プロジェクトの上書き保存に失敗しました:\n{e}")
+
 
     @Slot()
     def _export_output(self):
