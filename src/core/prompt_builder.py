@@ -1,5 +1,6 @@
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List # Add List
 from .settings import load_settings, DEFAULT_SETTINGS # Import settings functions
+from .dynamic_prompts import evaluate_dynamic_prompt # Import the new function
 
 # --- Instruction Templates (Adjust based on the fine-tuned model's needs) ---
 # These are examples and should match the expected format of your LLM.
@@ -40,9 +41,10 @@ INPUT_METADATA_ORDER_JA = [
 KEY_MAP_FROM_JA = {v: k for k, v in METADATA_MAP.items()}
 
 
-def format_metadata(metadata: Dict[str, str | list[str]], mode: str = "generate") -> str:
+def format_metadata(metadata: Dict[str, str | List[str]], mode: str = "generate") -> str:
     """
     Formats the metadata dictionary into a string for the prompt, respecting order.
+    Applies dynamic prompt evaluation to keywords and genres, and strips quotes from them.
     Excludes 'dialogue_level' if mode is 'idea'.
     """
     output = []
@@ -58,14 +60,23 @@ def format_metadata(metadata: Dict[str, str | list[str]], mode: str = "generate"
 
         value = metadata.get(key) # Get value using the internal key ('title', 'dialogue_level', etc.)
         if value:
-            # Handle list types (keywords, genres)
+            # Handle list types (keywords, genres) - Apply dynamic prompts and strip quotes
             if key in ["keywords", "genres"] and isinstance(value, list):
-                    if value: # Only add if list is not empty
-                        # `- ` を付けずに改行で結合 (データセット側に合わせる)
-                        output.append(f"# {japanese_name}:\n" + "\n".join(item for item in value))
+                evaluated_tags = []
+                for tag in value:
+                    evaluated_tag = evaluate_dynamic_prompt(tag)
+                    # Strip outer double quotes AFTER evaluation, as TagWidget already removed input quotes
+                    # but dynamic evaluation might add them back via {"tag A"|tagB}
+                    evaluated_tags.append(evaluated_tag.strip('"'))
+                # Filter out any empty tags that might result from evaluation/stripping
+                evaluated_tags = [tag for tag in evaluated_tags if tag]
+                if evaluated_tags: # Only add if list is not empty after evaluation
+                    # `- ` を付けずに改行で結合 (データセット側に合わせる)
+                    output.append(f"# {japanese_name}:\n" + "\n".join(item for item in evaluated_tags))
             # Handle string types (title, synopsis, setting, plot, dialogue_level)
+            # Dynamic prompts for these are handled in build_prompt before formatting
             elif isinstance(value, str) and value.strip():
-                 output.append(f"# {japanese_name}:\n{value.strip()}")
+                 output.append(f"# {japanese_name}:\n{value.strip()}") # Keep original value here
             # Add other type handling here if necessary
 
     return "\n\n".join(output)
@@ -181,10 +192,27 @@ def build_prompt(
         ui_data: Dictionary containing metadata, rating, and authors_note from the UI.
         cont_prompt_order: The desired order for continuation prompts ('text_first' or 'reference_first').
     """
-    # --- Extract data from ui_data ---
-    metadata = ui_data.get("metadata", {})
+    # --- Extract data from ui_data and apply dynamic prompts ---
+    raw_metadata = ui_data.get("metadata", {})
     rating_override = ui_data.get("rating") # Rating from UI details tab
-    authors_note = ui_data.get("authors_note", "")
+    raw_authors_note = ui_data.get("authors_note", "")
+
+    # Apply dynamic prompts to relevant fields BEFORE further processing
+    metadata = {
+        "title": evaluate_dynamic_prompt(raw_metadata.get("title", "")),
+        "keywords": raw_metadata.get("keywords", []), # Evaluate keywords in format_metadata
+        "genres": raw_metadata.get("genres", []),   # Evaluate genres in format_metadata
+        "synopsis": evaluate_dynamic_prompt(raw_metadata.get("synopsis", "")),
+        "setting": evaluate_dynamic_prompt(raw_metadata.get("setting", "")),
+        "plot": evaluate_dynamic_prompt(raw_metadata.get("plot", "")),
+        # dialogue_level is not a free text field, no evaluation needed
+        "dialogue_level": raw_metadata.get("dialogue_level")
+    }
+    # Filter out dialogue_level if it's None (wasn't present in raw_metadata)
+    if metadata["dialogue_level"] is None:
+        del metadata["dialogue_level"]
+
+    authors_note = evaluate_dynamic_prompt(raw_authors_note)
 
     # --- Determine rating to use ---
     if rating_override:

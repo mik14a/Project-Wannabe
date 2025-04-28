@@ -266,16 +266,24 @@ class TagWidget(QWidget):
             return
 
         added = False
-        # Check if the input is enclosed in double quotes
-        if text.startswith('"') and text.endswith('"') and len(text) > 1:
+        # 1. Check if the input looks like a dynamic prompt {.*}
+        if text.startswith('{') and text.endswith('}') and len(text) > 2:
+            # Treat the entire {.*} string as a single tag
+            tag = text # Keep the full dynamic prompt string
+            if tag not in self._tags:
+                self._tags.add(tag)
+                self._add_tag_label(tag) # Display the full {.*} string as the tag
+                added = True
+        # 2. Check if the input is enclosed in double quotes (and not a dynamic prompt)
+        elif text.startswith('"') and text.endswith('"') and len(text) > 1:
             # Treat the content inside the quotes as a single tag
             tag = text[1:-1].strip() # Remove quotes and strip whitespace
             if tag and tag not in self._tags: # Ensure the tag is not empty after stripping
                 self._tags.add(tag)
                 self._add_tag_label(tag)
                 added = True
+        # 3. Otherwise, split by space
         else:
-            # Original logic: split by space for non-quoted input
             new_tags = [tag.strip() for tag in text.split() if tag.strip()]
             for tag in new_tags:
                 if tag not in self._tags:
