@@ -15,6 +15,7 @@ from src.ui.widgets import CollapsibleSection, TagWidget
 from src.ui.dialogs import KoboldConfigDialog, GenerationParamsDialog
 from src.core.kobold_client import KoboldClient, KoboldClientError
 from src.core.prompt_builder import build_prompt
+from src.core.dynamic_prompts import evaluate_dynamic_prompt # Import dynamic prompt evaluator
 from src.core.settings import load_settings, DEFAULT_SETTINGS # Import DEFAULT_SETTINGS
 from src.ui.menu_handler import MenuHandler # Import the new MenuHandler
 
@@ -302,9 +303,12 @@ class MainWindow(QMainWindow):
         self.generation_status = "single_running"
         self._update_ui_for_generation_start()
 
-        main_text = self.main_text_edit.toPlainText()
+        # Get raw main text and evaluate dynamic prompts
+        raw_main_text = self.main_text_edit.toPlainText()
+        main_text = evaluate_dynamic_prompt(raw_main_text)
+
         ui_data = self._get_metadata_from_ui() # Get data dict from UI (includes metadata, rating, authors_note)
-        # authors_note = ui_data["authors_note"] # Extracted but used inside build_prompt now
+        # authors_note is evaluated inside build_prompt
 
         # Load settings to get the prompt order
         settings = load_settings()
@@ -348,9 +352,12 @@ class MainWindow(QMainWindow):
         self._update_ui_for_generation_start()
 
         # Initial prompt build (might be overwritten in loop if immediate update is on)
-        main_text = self.main_text_edit.toPlainText()
+        # Get raw main text and evaluate dynamic prompts for the initial prompt
+        raw_main_text = self.main_text_edit.toPlainText()
+        main_text = evaluate_dynamic_prompt(raw_main_text)
+
         ui_data = self._get_metadata_from_ui() # Get data dict from UI (includes metadata, rating, authors_note)
-        # authors_note = ui_data["authors_note"] # Extracted but used inside build_prompt now
+        # authors_note is evaluated inside build_prompt
 
         # Load settings for initial prompt build
         settings = load_settings()
@@ -473,9 +480,12 @@ class MainWindow(QMainWindow):
             while self.generation_status == "infinite_running":
                 # --- Rebuild prompt if behavior is 'immediate' ---
                 if update_behavior == "immediate":
-                    main_text = self.main_text_edit.toPlainText()
+                    # Get raw main text and evaluate dynamic prompts inside the loop
+                    raw_main_text = self.main_text_edit.toPlainText()
+                    main_text = evaluate_dynamic_prompt(raw_main_text)
+
                     ui_data = self._get_metadata_from_ui() # Get data dict from UI (includes metadata, rating, authors_note)
-                    # authors_note = ui_data["authors_note"] # Extracted but used inside build_prompt now
+                    # authors_note is evaluated inside build_prompt
 
                     # Load settings again inside loop for immediate update (cont_order)
                     settings = load_settings()
