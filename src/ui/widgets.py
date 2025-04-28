@@ -211,19 +211,78 @@ class TagWidget(QWidget):
         self.tags_display_widget = QWidget() # Container for flow layout
         self.tags_layout = FlowLayout(self.tags_display_widget, 5, 5, 5) # margin, hspacing, vspacing
         main_layout.addWidget(self.tags_display_widget)
-        main_layout.addStretch() # Push tags upwards
+
+        # --- Calculate and set minimum height for approx. 2 lines ---
+        try:
+            # Create a temporary tag to measure its height accurately
+            temp_tag_widget = QWidget()
+            temp_layout = QHBoxLayout(temp_tag_widget)
+            temp_layout.setContentsMargins(2, 2, 2, 2) # Match margins in _add_tag_label
+            temp_layout.setSpacing(3) # Match spacing in _add_tag_label
+            temp_label = QLabel("Tg") # Use short text for typical height calculation
+            temp_label.setStyleSheet("color: black;") # Match style
+            temp_remove_button = QPushButton("x")
+            temp_remove_button.setFixedSize(16, 16) # Match size
+            temp_remove_button.setStyleSheet("QPushButton { border: none; font-weight: bold; color: black; background-color: #cccccc; border-radius: 8px; } QPushButton:hover { background-color: #bbbbbb; }") # Match style
+            temp_layout.addWidget(temp_label)
+            temp_layout.addWidget(temp_remove_button)
+            temp_tag_widget.setStyleSheet("QWidget { background-color: #d3d3d3; border-radius: 5px; padding: 1px 3px; }") # Match style & padding
+            temp_tag_widget.adjustSize() # Crucial to calculate sizeHint correctly
+
+            tag_height = temp_tag_widget.sizeHint().height()
+
+            # Get vertical spacing from the FlowLayout
+            v_spacing = self.tags_layout.vSpacing
+            if v_spacing == -1: # If using default spacing
+                v_spacing = self.tags_layout.spacing()
+                if v_spacing == -1: # If default spacing is also not set explicitly
+                     # Estimate based on style or use a reasonable default
+                     style_spacing = self.style().layoutSpacing(QSizePolicy.PushButton, QSizePolicy.PushButton, Qt.Vertical)
+                     v_spacing = style_spacing if style_spacing > 0 else 5 # Use 5 as fallback
+
+            # Minimum height = (height of tag * 2 lines) + (spacing between 2 lines * 1)
+            min_h = (tag_height * 2) + v_spacing
+            self.tags_display_widget.setMinimumHeight(min_h)
+            # print(f"Calculated TagWidget minimum height: {min_h} (Tag: {tag_height}, VSpace: {v_spacing})") # Debug print
+
+            # Clean up the temporary widget immediately
+            temp_tag_widget.deleteLater()
+            # Avoid potential issues by removing references, though deleteLater should handle it
+            del temp_tag_widget
+            del temp_layout
+            del temp_label
+            del temp_remove_button
+
+        except Exception as e:
+            print(f"Warning: Could not calculate minimum height for TagWidget: {e}")
+            # Set a reasonable fallback minimum height if calculation fails
+            self.tags_display_widget.setMinimumHeight(60) # Increased fallback slightly
+
+        main_layout.addStretch() # Push tags upwards (Moved after min height calculation)
 
     def _add_tags_from_input(self):
         text = self.tag_input.text().strip()
         if not text:
             return
-        new_tags = [tag.strip() for tag in text.split() if tag.strip()]
+
         added = False
-        for tag in new_tags:
-            if tag not in self._tags:
+        # Check if the input is enclosed in double quotes
+        if text.startswith('"') and text.endswith('"') and len(text) > 1:
+            # Treat the content inside the quotes as a single tag
+            tag = text[1:-1].strip() # Remove quotes and strip whitespace
+            if tag and tag not in self._tags: # Ensure the tag is not empty after stripping
                 self._tags.add(tag)
                 self._add_tag_label(tag)
                 added = True
+        else:
+            # Original logic: split by space for non-quoted input
+            new_tags = [tag.strip() for tag in text.split() if tag.strip()]
+            for tag in new_tags:
+                if tag not in self._tags:
+                    self._tags.add(tag)
+                    self._add_tag_label(tag)
+                    added = True
+
         self.tag_input.clear()
         if added:
             self.tagsChanged.emit(self.get_tags())
