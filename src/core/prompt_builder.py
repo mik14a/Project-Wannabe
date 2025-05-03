@@ -279,10 +279,10 @@ def build_prompt(
 
     if internal_input:
         # Ensure there's a newline between instruction and input if input exists
-        prompt = f"<s>[INST] {final_instruction}\n\n{internal_input} [/INST]"
+        prompt = f"<s>[INST]{final_instruction}\n{internal_input}[/INST]"
     else:
         # No extra newline if there's no input
-        prompt = f"<s>[INST] {final_instruction} [/INST]"
+        prompt = f"<s>[INST]{final_instruction}[/INST]"
 
     return prompt
 
