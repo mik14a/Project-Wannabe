@@ -6,9 +6,10 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QMenuBar, QStatusBar,
                                QSplitter, QTextEdit, QWidget, QVBoxLayout, QHBoxLayout,
                                QTabWidget, QScrollArea, QLineEdit, QPushButton, QMessageBox,
                                QPlainTextEdit, QToolBar, QDialog, QLineEdit, QLabel, QComboBox, # Add QLabel, QComboBox
-                               QPlainTextEdit) # Ensure QPlainTextEdit is imported
+                               QCheckBox, QPlainTextEdit) # Ensure QPlainTextEdit is imported, Add QCheckBox
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QTextCursor, QAction, QActionGroup, QFont # Add QFont
+from typing import Dict, Optional, List # Add Optional and List here
 
 # Correctly import custom widgets and other modules
 from src.ui.widgets import CollapsibleSection, TagWidget
@@ -18,6 +19,8 @@ from src.core.prompt_builder import build_prompt
 from src.core.dynamic_prompts import evaluate_dynamic_prompt # Import dynamic prompt evaluator
 from src.core.settings import load_settings, DEFAULT_SETTINGS # Import DEFAULT_SETTINGS
 from src.ui.menu_handler import MenuHandler # Import the new MenuHandler
+# Import IdeaProcessor and constants
+from src.core.idea_processor import IdeaProcessor, IDEA_ITEM_ORDER, IDEA_ITEM_ORDER_JA, METADATA_MAP
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -32,9 +35,15 @@ class MainWindow(QMainWindow):
         self.output_block_counter = 1
         self.current_mode = "generate" # Initial mode: "generate" or "idea"
         self.infinite_generation_prompt = "" # Store prompt for infinite loop
+        self.idea_item_key_map = {name_ja: key for key, name_ja in METADATA_MAP.items() if key in IDEA_ITEM_ORDER} # Map JA name to key
 
         # Instantiate MenuHandler
         self.menu_handler = MenuHandler(self)
+
+        # Placeholders for IDEA UI elements
+        self.idea_controls_widget = None
+        self.idea_item_combo = None
+        self.idea_fast_mode_check = None
 
         # Create UI elements
         self._create_toolbar() # Create toolbar first
@@ -142,10 +151,44 @@ class MainWindow(QMainWindow):
         scroll_content_widget = QWidget()
         scroll_area.setWidget(scroll_content_widget)
         details_layout = QVBoxLayout(scroll_content_widget)
-        details_layout.setSpacing(5)
+        details_layout.setSpacing(10) # Increase spacing slightly
 
-        # --- Rating Selection (Moved to top) ---
-        rating_section = CollapsibleSection("レーティング (生成時)")
+        # --- IDEA Task Controls (Initially Hidden) ---
+        self.idea_controls_widget = QWidget()
+        idea_controls_layout = QVBoxLayout(self.idea_controls_widget)
+        idea_controls_layout.setContentsMargins(5, 5, 5, 5)
+        idea_controls_layout.setSpacing(5)
+
+        idea_item_layout = QHBoxLayout()
+        idea_item_label = QLabel("生成項目:")
+        self.idea_item_combo = QComboBox()
+        self.idea_item_combo.addItem("全部", "all") # Add "all" option with internal key
+        for i, item_ja in enumerate(IDEA_ITEM_ORDER_JA):
+            item_key = IDEA_ITEM_ORDER[i]
+            self.idea_item_combo.addItem(item_ja, item_key) # Store internal key as data
+        idea_item_layout.addWidget(idea_item_label)
+        idea_item_layout.addWidget(self.idea_item_combo)
+        idea_controls_layout.addLayout(idea_item_layout)
+
+        self.idea_fast_mode_check = QCheckBox("高速な手法（実験的）")
+        idea_controls_layout.addWidget(self.idea_fast_mode_check)
+
+        # Add a separator or some visual distinction if desired
+        # separator = QFrame()
+        # separator.setFrameShape(QFrame.HLine)
+        # separator.setFrameShadow(QFrame.Sunken)
+        # idea_controls_layout.addWidget(separator)
+
+        details_layout.addWidget(self.idea_controls_widget)
+        self.idea_controls_widget.hide() # Hide initially
+        # Connect signal after creation
+        self.idea_item_combo.currentIndexChanged.connect(self._update_idea_fast_mode_state)
+        # --- End IDEA Task Controls ---
+
+
+        # --- Rating Selection ---
+        # Make rating section collapsible as well
+        rating_section = CollapsibleSection("レーティング (生成時)", parent=scroll_content_widget)
         rating_layout = QHBoxLayout()
         rating_label = QLabel("レーティング:")
         self.rating_combo_details = QComboBox()
@@ -156,7 +199,7 @@ class MainWindow(QMainWindow):
         rating_layout.addStretch()
         rating_section.content_layout.addLayout(rating_layout)
         details_layout.addWidget(rating_section)
-        # Load initial rating from settings
+        # Load initial rating from settings (ensure this happens after combo box creation)
         initial_settings = load_settings()
         initial_rating = initial_settings.get("default_rating", DEFAULT_SETTINGS["default_rating"])
         initial_rating_index = self.rating_combo_details.findData(initial_rating)
@@ -238,7 +281,7 @@ class MainWindow(QMainWindow):
         details_layout.addWidget(authors_note_section)
 
         # Dialogue Level
-        dialogue_section = CollapsibleSection("セリフ量")
+        dialogue_section = CollapsibleSection("セリフ量 (生成時)") # Clarify title
         dialogue_layout = QHBoxLayout()
         dialogue_label = QLabel("セリフ量:")
         self.dialogue_level_combo = QComboBox()
@@ -300,33 +343,85 @@ class MainWindow(QMainWindow):
              return
 
         # Only proceed if status is idle
-        self.generation_status = "single_running"
-        self._update_ui_for_generation_start()
+        # --- IDEA Mode Logic ---
+        if self.current_mode == "idea":
+            selected_item_index = self.idea_item_combo.currentIndex()
+            selected_item_key = self.idea_item_combo.itemData(selected_item_index) # Get internal key ('all', 'title', etc.)
+            fast_mode_enabled = self.idea_fast_mode_check.isChecked()
+            ui_inputs = self._get_metadata_from_ui()["metadata"] # Get only metadata part
 
-        # Get raw main text and evaluate dynamic prompts
-        raw_main_text = self.main_text_edit.toPlainText()
-        main_text = evaluate_dynamic_prompt(raw_main_text)
+            processor = IdeaProcessor(ui_inputs)
+            stop_sequence = processor.determine_stop_sequence(selected_item_key)
+            prompt_suffix = ""
+            prereqs_met = True # Assume met unless fast mode check fails
 
-        ui_data = self._get_metadata_from_ui() # Get data dict from UI (includes metadata, rating, authors_note)
-        # authors_note is evaluated inside build_prompt
+            if fast_mode_enabled:
+                prereqs_met, warning_msg = processor.check_fast_mode_prerequisites(selected_item_key)
+                if warning_msg:
+                    QMessageBox.warning(self, "前提条件に関する警告", warning_msg)
+                    # Continue even if prereqs_met is False, as per user request
 
-        # Load settings to get the prompt order
-        settings = load_settings()
-        cont_order = settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
+                # Generate suffix regardless of warning, as we are continuing
+                prompt_suffix = processor.generate_prompt_suffix(selected_item_key)
 
-        # Call build_prompt with the new signature
-        prompt = build_prompt(
-            current_mode=self.current_mode,
-            main_text=main_text,
-            ui_data=ui_data, # Pass the whole ui_data dictionary
-            cont_prompt_order=cont_order
-            # rating_override is no longer needed here, handled inside build_prompt
-        )
+            # Get base prompt (unchanged logic for IDEA mode in build_prompt)
+            # Pass the full ui_data including rating and authors_note to build_prompt
+            full_ui_data = self._get_metadata_from_ui()
+            base_prompt = build_prompt(
+                current_mode="idea",
+                main_text="", # main_text is not used for IDEA mode
+                ui_data=full_ui_data,
+                cont_prompt_order="reference_first" # This setting doesn't affect IDEA mode
+            )
 
-        separator = f"\n--- 生成ブロック {self.output_block_counter} ---\n"
-        self._append_to_output(separator)
+            final_prompt = base_prompt + prompt_suffix
 
-        self.generation_task = asyncio.ensure_future(self._run_single_generation(prompt))
+            # --- Execute Generation based on mode ---
+            self.generation_status = "single_running" # Use single_running status for IDEA task
+            self._update_ui_for_generation_start() # Update UI (e.g., status bar)
+
+            separator = f"\n--- アイデア生成 ({self.idea_item_combo.currentText()}) ---\n"
+            self._append_to_output(separator)
+
+            if fast_mode_enabled:
+                # Fast Mode: Stream output directly
+                self.generation_task = asyncio.ensure_future(
+                    self._run_single_generation(final_prompt, stop_sequence=stop_sequence)
+                )
+            else:
+                # Safe Mode: Get full output, then filter
+                self.generation_task = asyncio.ensure_future(
+                    self._run_safe_idea_generation(final_prompt, stop_sequence=stop_sequence, selected_item_key=selected_item_key)
+                )
+
+        # --- Generate Mode Logic (Existing) ---
+        else: # self.current_mode == "generate"
+            self.generation_status = "single_running"
+            self._update_ui_for_generation_start()
+
+            # Get raw main text and evaluate dynamic prompts
+            raw_main_text = self.main_text_edit.toPlainText()
+            main_text = evaluate_dynamic_prompt(raw_main_text)
+
+            ui_data = self._get_metadata_from_ui() # Get data dict from UI (includes metadata, rating, authors_note)
+
+            # Load settings to get the prompt order
+            settings = load_settings()
+            cont_order = settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
+
+            # Call build_prompt with the new signature
+            prompt = build_prompt(
+                current_mode=self.current_mode,
+                main_text=main_text,
+                ui_data=ui_data, # Pass the whole ui_data dictionary
+                cont_prompt_order=cont_order
+            )
+
+            separator = f"\n--- 生成ブロック {self.output_block_counter} ---\n"
+            self._append_to_output(separator)
+
+            # Pass None for stop_sequence to use settings default in generate mode
+            self.generation_task = asyncio.ensure_future(self._run_single_generation(prompt, stop_sequence=None))
 
     @Slot()
     def _toggle_infinite_generation(self):
@@ -423,8 +518,12 @@ class MainWindow(QMainWindow):
 
 
     # --- Async Generation Methods ---
-    async def _run_single_generation(self, prompt: str):
-        """Runs a single generation and updates status."""
+    async def _run_single_generation(self, prompt: str, stop_sequence: Optional[List[str]] = None):
+        """
+        Runs a single generation (for Generate mode or IDEA Fast mode) and updates status.
+        Streams output directly to the UI.
+        """
+        task_name = "アイデア生成 (高速)" if self.current_mode == "idea" else "単発生成"
         try:
             # Get mode-specific max_length
             settings = load_settings()
@@ -433,25 +532,29 @@ class MainWindow(QMainWindow):
             else: # generate mode
                 current_max_length = settings.get("max_length_generate", DEFAULT_SETTINGS["max_length_generate"])
 
-            # Pass max_length to generate_stream (assuming it accepts it)
-            async for token in self.kobold_client.generate_stream(prompt, max_length=current_max_length):
+            # Pass max_length and stop_sequence to generate_stream
+            async for token in self.kobold_client.generate_stream(
+                prompt,
+                max_length=current_max_length,
+                stop_sequence=stop_sequence # Pass the determined stop sequence
+            ):
                 self._append_to_output(token)
                 await asyncio.sleep(0.001) # Yield control briefly
 
             # Finished successfully
             self.output_block_counter += 1
-            self.status_bar.showMessage("単発生成 完了", 3000)
+            self.status_bar.showMessage(f"{task_name} 完了", 3000)
 
         except KoboldClientError as e:
-            error_msg = f"\n--- エラー: {e} ---\n"
+            error_msg = f"\n--- {task_name} エラー: {e} ---\n"
             self._append_to_output(error_msg)
-            self.status_bar.showMessage("生成エラー", 3000)
+            self.status_bar.showMessage(f"{task_name} エラー", 3000)
         except asyncio.CancelledError:
-            print("Single generation task cancelled unexpectedly.")
-            self._append_to_output("\n--- 生成がキャンセルされました ---\n")
-            self.status_bar.showMessage("生成キャンセル", 3000)
+            print(f"{task_name} task cancelled.")
+            self._append_to_output(f"\n--- {task_name}がキャンセルされました ---\n")
+            self.status_bar.showMessage(f"{task_name} キャンセル", 3000)
         except Exception as e:
-             error_msg = f"\n--- 予期せぬエラーが発生しました: {e} ---\n"
+             error_msg = f"\n--- {task_name}中に予期せぬエラーが発生しました: {e} ---\n"
              print(error_msg)
              self._append_to_output(error_msg)
              self.status_bar.showMessage("予期せぬエラー", 3000)
@@ -460,6 +563,64 @@ class MainWindow(QMainWindow):
             self.generation_status = "idle"
             self._update_ui_for_generation_stop()
             self.generation_task = None
+
+    async def _run_safe_idea_generation(self, prompt: str, stop_sequence: Optional[List[str]], selected_item_key: str):
+        """
+        Runs generation for IDEA Safe mode: gets full output, filters, then displays.
+        """
+        task_name = "アイデア生成 (安全)"
+        full_output = ""
+        try:
+            # Get mode-specific max_length
+            settings = load_settings()
+            current_max_length = settings.get("max_length_idea", DEFAULT_SETTINGS["max_length_idea"])
+
+            # Collect full output from the stream
+            async for token in self.kobold_client.generate_stream(
+                prompt,
+                max_length=current_max_length,
+                stop_sequence=stop_sequence
+            ):
+                full_output += token
+                # Optional: Add a small sleep if needed, but not strictly necessary here
+                # await asyncio.sleep(0.001)
+
+            # Filter the output
+            ui_inputs = self._get_metadata_from_ui()["metadata"] # Get current inputs for processor context
+            processor = IdeaProcessor(ui_inputs) # Re-instantiate or pass if needed
+            filtered_output = processor.filter_output(full_output, selected_item_key)
+
+            # Display filtered output (replace existing content in output area)
+            # self._append_to_output(filtered_output) # Append might be confusing, let's replace
+            self.output_text_edit.appendPlainText(filtered_output) # Append after the separator
+            cursor = self.output_text_edit.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            self.output_text_edit.setTextCursor(cursor)
+
+
+            # Finished successfully
+            self.output_block_counter += 1 # Increment even though we replaced content
+            self.status_bar.showMessage(f"{task_name} 完了", 3000)
+
+        except KoboldClientError as e:
+            error_msg = f"\n--- {task_name} エラー: {e} ---\n"
+            self._append_to_output(error_msg) # Append errors
+            self.status_bar.showMessage(f"{task_name} エラー", 3000)
+        except asyncio.CancelledError:
+            print(f"{task_name} task cancelled.")
+            self._append_to_output(f"\n--- {task_name}がキャンセルされました ---\n") # Append cancellation message
+            self.status_bar.showMessage(f"{task_name} キャンセル", 3000)
+        except Exception as e:
+             error_msg = f"\n--- {task_name}中に予期せぬエラーが発生しました: {e} ---\n"
+             print(error_msg)
+             self._append_to_output(error_msg) # Append errors
+             self.status_bar.showMessage("予期せぬエラー", 3000)
+        finally:
+            # Reset status after run finishes or errors out
+            self.generation_status = "idle"
+            self._update_ui_for_generation_stop()
+            self.generation_task = None
+
 
     async def _run_infinite_generation_loop(self):
         """Continuously generates text, potentially rebuilding the prompt based on settings."""
@@ -740,6 +901,8 @@ class MainWindow(QMainWindow):
              return
         self.current_mode = "generate"
         self.status_bar.showMessage("モード: 小説生成", 2000)
+        if self.idea_controls_widget:
+            self.idea_controls_widget.hide()
 
     @Slot()
     def _set_mode_idea(self):
@@ -751,6 +914,25 @@ class MainWindow(QMainWindow):
              return
         self.current_mode = "idea"
         self.status_bar.showMessage("モード: アイデア出し", 2000)
+        if self.idea_controls_widget:
+            self.idea_controls_widget.show()
+            self._update_idea_fast_mode_state() # Update checkbox state when switching to idea mode
+
+    @Slot()
+    def _update_idea_fast_mode_state(self):
+        """Enables/disables the fast mode checkbox based on combo box selection."""
+        if not self.idea_item_combo or not self.idea_fast_mode_check:
+            return
+
+        selected_item_index = self.idea_item_combo.currentIndex()
+        selected_item_key = self.idea_item_combo.itemData(selected_item_index)
+
+        # Disable fast mode for "全部" or the first item ("タイトル")
+        if selected_item_key == 'all' or selected_item_key == IDEA_ITEM_ORDER[0]:
+            self.idea_fast_mode_check.setEnabled(False)
+            self.idea_fast_mode_check.setChecked(False) # Uncheck when disabled
+        else:
+            self.idea_fast_mode_check.setEnabled(True)
 
 
 if __name__ == "__main__":

@@ -32,7 +32,8 @@ class KoboldClient:
         self,
         prompt: str,
         max_length: Optional[int] = None, # Add max_length parameter
-        generation_params: Optional[Dict[str, Any]] = None
+        generation_params: Optional[Dict[str, Any]] = None,
+        stop_sequence: Optional[List[str]] = None # Add stop_sequence parameter
     ) -> AsyncGenerator[str, None]:
         """
         Sends a prompt to the KoboldCpp streaming API and yields generated tokens.
@@ -41,6 +42,7 @@ class KoboldClient:
             prompt: The input prompt string.
             max_length: Optional specific max_length for this generation request.
             generation_params: Optional dictionary overriding other default generation parameters.
+            stop_sequence: Optional list of strings to use as stop sequences, overriding settings.
 
         Yields:
             str: Generated text chunks (tokens).
@@ -57,10 +59,14 @@ class KoboldClient:
             "top_p": self._current_settings.get("top_p"),
             "top_k": self._current_settings.get("top_k"), # Add top_k from settings
             "rep_pen": self._current_settings.get("rep_pen"),
-            "stop_sequence": self._current_settings.get("stop_sequences", []),
+            # Stop sequence handling: prioritize argument over settings
+            "stop_sequence": stop_sequence if stop_sequence is not None else self._current_settings.get("stop_sequences", []),
         }
         if generation_params:
-            params_to_send.update(generation_params) # Apply overrides
+            # Ensure generation_params doesn't overwrite the prioritized stop_sequence
+            gen_params_copy = generation_params.copy()
+            gen_params_copy.pop("stop_sequence", None) # Remove stop_sequence if present in overrides
+            params_to_send.update(gen_params_copy) # Apply other overrides
 
         # If top_k is 0 (disabled), remove it from the parameters to send
         if params_to_send.get("top_k") == 0:
