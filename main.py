@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QMenuBar, QStatusBar,
                                QTabWidget, QScrollArea, QLineEdit, QPushButton, QMessageBox,
                                QPlainTextEdit, QToolBar, QDialog, QLineEdit, QLabel, QComboBox, # Add QLabel, QComboBox
                                QCheckBox, QPlainTextEdit) # Ensure QPlainTextEdit is imported, Add QCheckBox
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QTimer # Add QTimer
 from PySide6.QtGui import QTextCursor, QAction, QActionGroup, QFont # Add QFont
 from typing import Dict, Optional, List # Add Optional and List here
 
@@ -44,6 +44,7 @@ class MainWindow(QMainWindow):
         self.idea_controls_widget = None
         self.idea_item_combo = None
         self.idea_fast_mode_check = None
+        self.infinite_warning_shown = False # Flag for infinite gen warning
 
         # Create UI elements
         self._create_toolbar() # Create toolbar first
@@ -380,19 +381,26 @@ class MainWindow(QMainWindow):
             self.generation_status = "single_running" # Use single_running status for IDEA task
             self._update_ui_for_generation_start() # Update UI (e.g., status bar)
 
-            separator = f"\n--- アイデア生成 ({self.idea_item_combo.currentText()}) ---\n"
+            # Use unified separator format including counter
+            separator = f"\n--- アイデア生成 ({self.idea_item_combo.currentText()}) ({self.output_block_counter}) ---\n"
             self._append_to_output(separator)
 
-            if fast_mode_enabled:
-                # Fast Mode: Stream output directly
-                self.generation_task = asyncio.ensure_future(
+            # IDEA "all" item or fast mode should stream
+            if selected_item_key == "all" or fast_mode_enabled:
+                 self.generation_task = asyncio.ensure_future(
                     self._run_single_generation(final_prompt, stop_sequence=stop_sequence)
                 )
-            else:
-                # Safe Mode: Get full output, then filter
+            # else: # Safe Mode (specific item, not fast)
+            #     # Safe Mode: Get full output, then filter
+            #     self.generation_task = asyncio.ensure_future(
+            #         self._run_safe_idea_generation(final_prompt, stop_sequence=stop_sequence, selected_item_key=selected_item_key)
+            #     )
+            # Simplified: If not 'all' and not 'fast', it must be 'safe'
+            else: # Safe Mode (specific item, not fast)
                 self.generation_task = asyncio.ensure_future(
                     self._run_safe_idea_generation(final_prompt, stop_sequence=stop_sequence, selected_item_key=selected_item_key)
                 )
+
 
         # --- Generate Mode Logic (Existing) ---
         else: # self.current_mode == "generate"
@@ -444,6 +452,7 @@ class MainWindow(QMainWindow):
     def _start_infinite_generation(self):
         """Starts the infinite generation loop."""
         self.generation_status = "infinite_running"
+        self.infinite_warning_shown = False # Reset warning flag for new session
         self._update_ui_for_generation_start()
 
         # Initial prompt build (might be overwritten in loop if immediate update is on)
@@ -599,7 +608,10 @@ class MainWindow(QMainWindow):
 
 
             # Finished successfully
-            self.output_block_counter += 1 # Increment even though we replaced content
+            # Increment counter only if generation was successful (or started for streaming)
+            # For safe mode, counter is incremented after successful filtering/display
+            # For fast mode (including 'all'), counter is incremented after stream finishes in _run_single_generation
+            # self.output_block_counter += 1 # Moved to _run_single_generation and after filtering in safe mode
             self.status_bar.showMessage(f"{task_name} 完了", 3000)
 
         except KoboldClientError as e:
@@ -624,88 +636,241 @@ class MainWindow(QMainWindow):
 
     async def _run_infinite_generation_loop(self):
         """Continuously generates text, potentially rebuilding the prompt based on settings."""
-        # Load behavior setting based on current mode
         settings = load_settings()
         inf_gen_behavior = settings.get("infinite_generation_behavior", DEFAULT_SETTINGS["infinite_generation_behavior"])
-        behavior_key = self.current_mode # "idea" or "generate"
-        update_behavior = inf_gen_behavior.get(behavior_key, "manual") # Default to manual
+        behavior_key = self.current_mode
+        update_behavior = inf_gen_behavior.get(behavior_key, "manual")
 
-        # Use the initially built prompt if behavior is manual
-        current_prompt = self.infinite_generation_prompt
-        if not current_prompt and update_behavior == "manual":
-             print("Error: Initial infinite generation prompt is empty and behavior is manual.")
-             self._stop_current_generation()
-             return
+        # --- Variables to be determined before the loop (for manual) or inside (for immediate) ---
+        final_prompt = ""
+        stop_sequence = None
+        fast_mode_enabled = False
+        selected_item_key = "all" # Default for safety
+        processor = None
+        current_max_length = settings.get("max_length_generate", DEFAULT_SETTINGS["max_length_generate"]) # Default to generate
 
+        # --- Helper function to prepare IDEA generation parameters ---
+        def prepare_idea_params():
+            nonlocal final_prompt, stop_sequence, fast_mode_enabled, selected_item_key, processor, current_max_length
+            try:
+                selected_item_index = self.idea_item_combo.currentIndex()
+                selected_item_key = self.idea_item_combo.itemData(selected_item_index)
+                fast_mode_enabled = self.idea_fast_mode_check.isChecked()
+                ui_inputs = self._get_metadata_from_ui()["metadata"]
+                full_ui_data = self._get_metadata_from_ui() # For build_prompt
+
+                processor = IdeaProcessor(ui_inputs)
+                # Call correct IdeaProcessor methods
+                stop_sequence = processor.determine_stop_sequence(selected_item_key)
+                prompt_suffix = ""
+                warning_msg = None
+                if fast_mode_enabled:
+                    prereqs_met, warning_msg = processor.check_fast_mode_prerequisites(selected_item_key)
+                    # Generate suffix even if prereqs not met, as per single generation logic
+                    prompt_suffix = processor.generate_prompt_suffix(selected_item_key)
+
+                if warning_msg:
+                    # Show warning only once per infinite generation session
+                    if not self.infinite_warning_shown:
+                        # Run warning in main thread using QTimer.singleShot
+                        QTimer.singleShot(0, lambda: QMessageBox.warning(self, "前提条件に関する警告", warning_msg))
+                        self.infinite_warning_shown = True # Set flag after showing
+
+                # Build base prompt
+                base_prompt = build_prompt(
+                    current_mode="idea",
+                    main_text="",
+                    ui_data=full_ui_data,
+                    cont_prompt_order="reference_first" # Doesn't affect IDEA
+                )
+                final_prompt = base_prompt + prompt_suffix
+
+                # Get IDEA max length
+                current_max_length = settings.get("max_length_idea", DEFAULT_SETTINGS["max_length_idea"])
+
+                return True # Preparation successful
+
+            except Exception as e:
+                print(f"Error preparing IDEA params: {e}")
+                error_msg = f"\n--- 無限生成 (IDEA準備) エラー: {e} ---\n"
+                self._append_to_output(error_msg) # Append error to output
+                return False # Preparation failed
+
+        # --- Helper function to prepare Generate mode parameters ---
+        def prepare_generate_params():
+            nonlocal final_prompt, stop_sequence, current_max_length
+            try:
+                raw_main_text = self.main_text_edit.toPlainText()
+                main_text = evaluate_dynamic_prompt(raw_main_text)
+                ui_data = self._get_metadata_from_ui()
+                # Load settings for prompt order
+                current_settings = load_settings() # Reload settings if needed
+                cont_order = current_settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
+
+                final_prompt = build_prompt(
+                    current_mode="generate",
+                    main_text=main_text,
+                    ui_data=ui_data,
+                    cont_prompt_order=cont_order
+                )
+                # Use default stop sequence from KoboldClient/settings for generate mode
+                stop_sequence = None
+                # Get Generate max length
+                current_max_length = current_settings.get("max_length_generate", DEFAULT_SETTINGS["max_length_generate"])
+
+                return True # Preparation successful
+
+            except Exception as e:
+                print(f"Error preparing Generate params: {e}")
+                error_msg = f"\n--- 無限生成 (Generate準備) エラー: {e} ---\n"
+                self._append_to_output(error_msg) # Append error to output
+                return False # Preparation failed
+
+        # --- Initial preparation if behavior is 'manual' ---
+        if update_behavior == "manual":
+            if self.current_mode == "idea":
+                if not prepare_idea_params():
+                    self._stop_current_generation()
+                    return
+            else: # generate mode
+                if not prepare_generate_params():
+                    self._stop_current_generation()
+                    return
+            # Check if initial prompt is empty after manual prep
+            if not final_prompt:
+                 print("Error: Initial infinite generation prompt is empty after manual preparation.")
+                 self._stop_current_generation() # This line was missing in the previous SEARCH block
+                 return # Add the missing return statement here
+        # --- Main Generation Loop ---
         try:
             while self.generation_status == "infinite_running":
-                # --- Rebuild prompt if behavior is 'immediate' ---
+                # --- Re-prepare parameters if behavior is 'immediate' ---
                 if update_behavior == "immediate":
-                    # Get raw main text and evaluate dynamic prompts inside the loop
-                    raw_main_text = self.main_text_edit.toPlainText()
-                    main_text = evaluate_dynamic_prompt(raw_main_text)
-
-                    ui_data = self._get_metadata_from_ui() # Get data dict from UI (includes metadata, rating, authors_note)
-                    # authors_note is evaluated inside build_prompt
-
-                    # Load settings again inside loop for immediate update (cont_order)
-                    settings = load_settings()
-                    cont_order = settings.get("cont_prompt_order", DEFAULT_SETTINGS["cont_prompt_order"])
-
-                    # Call build_prompt with the new signature inside the loop
-                    current_prompt = build_prompt(
-                        current_mode=self.current_mode,
-                        main_text=main_text,
-                        ui_data=ui_data, # Pass the whole ui_data dictionary
-                        cont_prompt_order=cont_order
-                        # rating_override is no longer needed here, handled inside build_prompt
-                    )
-                    if not current_prompt:
-                         print("Warning: Rebuilt prompt for immediate update is empty. Skipping generation cycle.")
-                         await asyncio.sleep(0.5) # Avoid busy-waiting
-                         continue # Skip this generation cycle
-
-                # --- Generate using the current_prompt ---
-                separator = f"\n--- 生成ブロック {self.output_block_counter} ---\n"
-                self._append_to_output(separator)
-                try:
-                    # Get mode-specific max_length inside the loop (in case settings change)
-                    # Although changing settings during infinite gen might be blocked by UI logic
-                    settings = load_settings()
                     if self.current_mode == "idea":
-                        current_max_length = settings.get("max_length_idea", DEFAULT_SETTINGS["max_length_idea"])
+                        if not prepare_idea_params():
+                            await asyncio.sleep(0.5) # Wait before retrying or stopping
+                            continue # Skip this cycle on prep error
                     else: # generate mode
-                        current_max_length = settings.get("max_length_generate", DEFAULT_SETTINGS["max_length_generate"])
+                        if not prepare_generate_params():
+                            await asyncio.sleep(0.5)
+                            continue # Skip this cycle on prep error
+                    # Check if prompt is empty after immediate prep
+                    if not final_prompt:
+                         print("Warning: Rebuilt prompt for immediate update is empty. Skipping generation cycle.")
+                         await asyncio.sleep(0.5)
+                         continue
 
-                    # Pass max_length to generate_stream (assuming it accepts it)
-                    async for token in self.kobold_client.generate_stream(current_prompt, max_length=current_max_length):
-                        if self.generation_status != "infinite_running":
-                            raise asyncio.CancelledError("Infinite generation stopped during stream.")
-                        self._append_to_output(token)
-                        await asyncio.sleep(0.001)
+                # --- Define Separator Dynamically (Inside the loop for immediate mode) ---
+                # This needs to happen *after* potential parameter updates in immediate mode
+                current_item_text_for_separator = "N/A" # Default
+                if self.current_mode == "idea" and self.idea_item_combo:
+                     current_item_text_for_separator = self.idea_item_combo.currentText()
 
-                    self.output_block_counter += 1
+                if self.current_mode == "idea":
+                    separator = f"\n--- アイデア生成 ({current_item_text_for_separator}) ({self.output_block_counter}) ---\n"
+                else: # generate mode
+                    separator = f"\n--- 生成ブロック {self.output_block_counter} ---\n"
+
+
+                # --- Execute Generation based on mode and settings ---
+                generation_successful = False
+                try:
+                    if self.current_mode == "idea":
+                        # --- IDEA Mode Execution ---
+                        if selected_item_key == "all":
+                            # --- "All" Item: Always Stream ---
+                            self._append_to_output(separator)
+                            async for token in self.kobold_client.generate_stream(
+                                final_prompt,
+                                max_length=current_max_length,
+                                stop_sequence=stop_sequence # Use determined stop sequence even for 'all'
+                            ):
+                                if self.generation_status != "infinite_running":
+                                    raise asyncio.CancelledError("Infinite generation stopped during stream.")
+                                self._append_to_output(token)
+                                await asyncio.sleep(0.001)
+                            generation_successful = True
+                        elif not fast_mode_enabled:
+                            # --- Safe Mode (Collect, Filter, Append) ---
+                            full_output = ""
+                            async for token in self.kobold_client.generate_stream(
+                                final_prompt,
+                                max_length=current_max_length,
+                                stop_sequence=stop_sequence
+                            ):
+                                if self.generation_status != "infinite_running":
+                                    raise asyncio.CancelledError("Infinite generation stopped during stream.")
+                                full_output += token
+                                # No UI update during collection, maybe a small sleep
+                                await asyncio.sleep(0.001)
+
+                            if processor: # Ensure processor exists
+                                filtered_output = processor.filter_output(full_output, selected_item_key)
+                                # Append separator and filtered output directly
+                                self.output_text_edit.appendPlainText(separator + filtered_output)
+                                cursor = self.output_text_edit.textCursor()
+                                cursor.movePosition(QTextCursor.End)
+                                self.output_text_edit.setTextCursor(cursor)
+                                generation_successful = True
+                            else:
+                                print("Error: IdeaProcessor not available for filtering.")
+                                self._append_to_output("\n--- フィルタリングエラー ---\n")
+
+                        else:
+                            # --- Fast Mode (Stream directly) ---
+                            self._append_to_output(separator)
+                            async for token in self.kobold_client.generate_stream(
+                                final_prompt,
+                                max_length=current_max_length,
+                                stop_sequence=stop_sequence
+                            ):
+                                if self.generation_status != "infinite_running":
+                                    raise asyncio.CancelledError("Infinite generation stopped during stream.")
+                                self._append_to_output(token)
+                                await asyncio.sleep(0.001)
+                            generation_successful = True
+
+                    else:
+                        # --- Generate Mode Execution (Stream directly) ---
+                        self._append_to_output(separator)
+                        async for token in self.kobold_client.generate_stream(
+                            final_prompt,
+                            max_length=current_max_length,
+                            stop_sequence=stop_sequence # Will be None for generate mode
+                        ):
+                            if self.generation_status != "infinite_running":
+                                raise asyncio.CancelledError("Infinite generation stopped during stream.")
+                            self._append_to_output(token)
+                            await asyncio.sleep(0.001)
+                        generation_successful = True
+
+                    # --- Post-generation ---
+                    if generation_successful:
+                        self.output_block_counter += 1
                     await asyncio.sleep(0.5) # Wait before next generation
 
                 except KoboldClientError as e:
                     error_msg = f"\n--- 無限生成中エラー: {e} ---\n"
                     self._append_to_output(error_msg)
                     self.status_bar.showMessage("無限生成エラー発生、停止します", 5000)
-                    self._stop_current_generation()
-                    break
+                    self._stop_current_generation() # Stop the infinite loop
+                    break # Exit while loop
                 except asyncio.CancelledError:
                      print("Infinite generation loop cancelled.")
-                     # Don't append message here, _stop_current_generation handles UI
+                     # Stop is handled outside, just break the loop
                      break
                 except Exception as e:
                      error_msg = f"\n--- 無限生成中に予期せぬエラー: {e} ---\n"
                      print(error_msg)
                      self._append_to_output(error_msg)
                      self.status_bar.showMessage("予期せぬエラー発生、停止します", 5000)
-                     self._stop_current_generation()
-                     break
+                     self._stop_current_generation() # Stop the infinite loop
+                     break # Exit while loop
         finally:
-            # Ensure status is reset if loop exits unexpectedly
+            # Ensure status is reset if loop exits unexpectedly (e.g., error not caught above)
+            # or if it finishes normally but wasn't stopped via button click.
+            # The _stop_current_generation call inside the loop handles cancellation/errors.
+            # This ensures cleanup if the loop condition itself becomes false unexpectedly.
             if self.generation_status == "infinite_running":
                  self._stop_current_generation()
 
