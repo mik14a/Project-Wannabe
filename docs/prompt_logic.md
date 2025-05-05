@@ -135,11 +135,11 @@
 
 ```python
 if internal_input:
-    # Inputがある場合はInstructionとの間に改行2つ
-    prompt = f"<s>[INST] {final_instruction}\n\n{internal_input} [/INST]"
+    # Inputがある場合はInstructionとの間に改行1つ
+    prompt = f"<s>[INST]{final_instruction}\n{internal_input}[/INST]"
 else:
     # Inputがない場合はInstructionの直後に終了タグ
-    prompt = f"<s>[INST] {final_instruction} [/INST]"
+    prompt = f"<s>[INST]{final_instruction}[/INST]"
 ```
 
 *   システムプロンプトは使用しません。
@@ -149,6 +149,58 @@ else:
 
 *   ユーザーが設定画面で指定したストップシーケンスがAPIリクエストに渡されます。
 *   デフォルト値は `src/core/settings.py` の `DEFAULT_SETTINGS["stop_sequences"]` で定義されています（具体的な値は `settings.py` を参照）。
+
+### 1.7 IDEAタスク処理 (`IdeaProcessor` クラス)
+
+IDEAタスク (`current_mode == "idea"`) における項目選択や「高速な手法」チェックボックスの状態に応じた具体的な処理は、`prompt_builder.py` で基本プロンプト (`<s>[INST]...[/INST]`) が生成された後、`src/core/idea_processor.py` 内の `IdeaProcessor` クラスによって実行されます。`IdeaProcessor` は主に以下の役割を担います。
+
+1.  **初期化 (`__init__`)**:
+    *   UIの詳細情報タブから現在の入力値 (`title`, `keywords`, `genres`, `synopsis`, `setting`, `plot`) を受け取り、内部に保持します。
+
+2.  **高速モード前提条件チェック (`check_fast_mode_prerequisites`)**:
+    *   ユーザーが「高速な手法」をチェックし、かつ特定の項目（例: `synopsis`）を選択した場合に呼び出されます。
+    *   選択された項目よりも**前**にある項目（`IDEA_ITEM_ORDER` 配列に基づく順序: `title` -> `keywords` -> ... -> `plot`）がUIで入力されているかを確認します。
+    *   もし先行する項目に入力漏れがある場合、`False` と警告メッセージを返します。（UI側でこの警告を表示し、ユーザーは続行を選択できますが、期待通りの結果にならない可能性があることを示唆します。）
+    *   先行項目が全て入力されていれば `True` を返します。
+    *   **注意:** UIロジックにより、「全体」生成時や最初の項目「タイトル」選択時には「高速な手法」チェックボックス自体が無効化されるため、この関数が呼ばれるのは実質的に2番目以降の項目選択時です。
+
+3.  **Stop Sequence 決定 (`determine_stop_sequence`)**:
+    *   ユーザーが特定の項目（「全体」以外）を選択した場合に呼び出されます。
+    *   選択された項目の**次**に来る項目のヘッダー文字列（例: 選択項目が `synopsis` なら、次の `setting` のヘッダー `# 設定:`）を特定し、これをStop Sequenceとして返します。これにより、AIが選択された項目を生成し終え、次の項目のヘッダーを出力しようとした時点で生成を停止させます。
+    *   「全体」が選択された場合や、最後の項目 (`plot`) が選択された場合は、特定のStop Sequenceは不要なため `None` を返します。
+
+4.  **プロンプト接尾辞生成 (`generate_prompt_suffix`)**:
+    *   「高速な手法」が選択され、前提条件が満たされている（または警告を無視して続行された）場合に呼び出されます。
+    *   選択された項目よりも**前**にある項目について、UIから取得した入力値をAIの出力形式（`# 日本語名:\n値`、項目間は `\n\n` 区切り）にフォーマットし、結合した文字列を生成します。
+    *   この生成された文字列（接尾辞）は、`prompt_builder.py` が生成した基本プロンプトの `[/INST]` タグの**直後**に追加されます。これにより、AIは先行する項目が既に出力されているかのように認識し、選択された項目のヘッダー (`# {選択項目名}:`) から生成を開始することが期待されます。
+    *   例: `synopsis` を高速モードで生成する場合、`title`, `keywords`, `genres` の入力値がフォーマットされて `[/INST]` の後に追加され、AIはその続きとして `# あらすじ:` から生成を始めることを狙います。
+
+5.  **出力フィルタリング (`filter_output`)**:
+    *   **「高速な手法」を使用せず**、かつ特定の項目（「全体」以外）を選択した場合に呼び出されます。
+    *   この場合、AIはStop Sequence（次の項目のヘッダー）で停止することが期待されますが、完全に停止しなかったり、余分な空白や改行が含まれたりする可能性があるため、念のためフィルタリング処理が行われます。
+    *   このメソッドは、AIからの完全な出力文字列 (`full_output`) を受け取り、選択された項目のヘッダー (`# {選択項目名}:`) から、次の項目のヘッダーが現れる直前までを抽出します。
+    *   抽出された、選択項目に対応する部分文字列のみを最終的な出力として返します。
+    *   **この後処理フィルタリングが必要なため、「高速な手法」を使用しない項目指定生成ではストリーミング表示ができません。**
+
+**処理フローのまとめ:**
+
+*   **全体生成 (項目指定なし):**
+    *   `prompt_builder` が基本プロンプト生成。
+    *   `IdeaProcessor` は基本的に関与せず（Stop Sequenceなし）。
+    *   API呼び出し (ストリーミング有効)。
+*   **項目指定生成 (高速モード OFF):**
+    *   `prompt_builder` が基本プロンプト生成。
+    *   `IdeaProcessor.determine_stop_sequence` で次の項目のヘッダーをStop Sequenceに設定。
+    *   API呼び出し (ストリーミング**無効**)。
+    *   `IdeaProcessor.filter_output` でAIの全出力から該当項目部分を抽出（Stop Sequenceで止まらなかった場合の保険）。
+*   **項目指定生成 (高速モード ON, ※前提条件OK):**
+    *   `prompt_builder` が基本プロンプト生成。
+    *   `IdeaProcessor.determine_stop_sequence` で次の項目のヘッダーをStop Sequenceに設定。
+    *   `IdeaProcessor.generate_prompt_suffix` で先行項目の文字列を生成。
+    *   基本プロンプト (`...[/INST]`) + 接尾辞 + Stop Sequence を用いてAPI呼び出し (ストリーミング有効)。
+    *   (フィルタリングは基本的に不要だが、AIがStop Sequenceを無視した場合などに備える可能性はある)
+
+このように、`prompt_builder.py` が提供する一貫した基本プロンプトに対し、`IdeaProcessor` がユーザーの選択に応じてAPIリクエストの内容（Stop Sequence、接尾辞）やレスポンスの処理方法（フィルタリング、ストリーミング有効/無効）を動的に変更することで、IDEAタスクの多様な機能を実現しています。
 
 ---
 
