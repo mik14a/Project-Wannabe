@@ -20,8 +20,7 @@
 ### (2) AI モデルファイルのダウンロード
 
 1.  `Project Wannabe` が推奨する `wanabi 24B` モデル（GGUF 形式）をダウンロードします。
-    *   **[wanabi_24b_preview_gguf(現時点04/27の最新モデル、一部機能に非対応)](https://huggingface.co/kawaimasa/wanabi_24b_preview_gguf)]**
-    *   *代替案:* もし上記モデルが入手できない場合や、他のモデルを試したい場合は、[Hugging Face](https://huggingface.co/) で "GGUF" と検索し、 `.gguf` 形式のファイルを探します。
+    *   **[wanabi_24b_v1(現時点05/16の最新モデル)](https://huggingface.co/kawaimasa/wanabi_24b_preview_gguf)**
 2.  ダウンロードした `.gguf` ファイルを、`koboldcpp.exe` と同じフォルダ、または分かりやすい場所に保存します。
 
 ### (3) KoboldCpp の起動とモデルロード
