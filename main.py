@@ -13,8 +13,10 @@ from typing import Dict, Optional, List # Add Optional and List here
 
 # Correctly import custom widgets and other modules
 from src.ui.widgets import CollapsibleSection, TagWidget
-from src.ui.dialogs import KoboldConfigDialog, GenerationParamsDialog
+from src.ui.dialogs import ClientConfigDialog, GenerationParamsDialog
+from src.core.llm_client import LLMClient
 from src.core.kobold_client import KoboldClient, KoboldClientError
+from src.core.openai_compatible_client import OpenAICompatibleClient
 from src.core.prompt_builder import build_prompt
 from src.core.dynamic_prompts import evaluate_dynamic_prompt # Import dynamic prompt evaluator
 from src.core.settings import load_settings, DEFAULT_SETTINGS # Import DEFAULT_SETTINGS
@@ -28,7 +30,14 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Project Wannabe") # "(仮称)" を削除
         self.setGeometry(100, 100, 1200, 800)
 
-        self.kobold_client = KoboldClient()
+        settings = load_settings()
+        client_type = settings.get("client_type", "kobold")
+        if client_type == "kobold":
+            self.llm_client: LLMClient = KoboldClient()
+        elif client_type == "openai_compatible":
+            self.llm_client: LLMClient = OpenAICompatibleClient()
+        else:
+            raise ValueError(f"不明なクライアントタイプ: {settings.get('client_type')}")
         # Generation status: "idle", "single_running", "infinite_running"
         self.generation_status = "idle"
         self.generation_task = None # Holds the asyncio task for generation
@@ -310,19 +319,28 @@ class MainWindow(QMainWindow):
     def _clear_memo_edit(self):
         self.memo_edit.clear()
 
-    def _open_kobold_config_dialog(self):
-        dialog = KoboldConfigDialog(self)
+    def _open_client_config_dialog(self):
+        dialog = ClientConfigDialog(self)
         if dialog.exec() == QDialog.Accepted:
-            self.status_bar.showMessage("KoboldCpp 設定が更新されました。", 3000)
-            self.kobold_client.reload_settings()
+            client_type = load_settings()["client_type"]
+            if client_type == "kobold":
+                from src.core.kobold_client import KoboldClient
+                self.llm_client = KoboldClient()
+            elif client_type == "openai_compatible":
+                from src.core.openai_compatible_client import OpenAICompatibleClient
+                self.llm_client = OpenAICompatibleClient()
+            else:
+                raise ValueError(f"不明なクライアントタイプ: {client_type}")
+            self.status_bar.showMessage("クライアント設定が更新されました。", 3000)
+            self.llm_client.reload_settings()
         else:
-            self.status_bar.showMessage("KoboldCpp 設定の変更はキャンセルされました。", 3000)
+            self.status_bar.showMessage("クライアント設定の変更はキャンセルされました。", 3000)
 
     def _open_gen_params_dialog(self):
         dialog = GenerationParamsDialog(self)
         if dialog.exec() == QDialog.Accepted:
             self.status_bar.showMessage("生成パラメータが更新されました。", 3000)
-            self.kobold_client.reload_settings()
+            self.llm_client.reload_settings()
         else:
             self.status_bar.showMessage("生成パラメータの変更はキャンセルされました。", 3000)
 
@@ -542,7 +560,7 @@ class MainWindow(QMainWindow):
                 current_max_length = settings.get("max_length_generate", DEFAULT_SETTINGS["max_length_generate"])
 
             # Pass max_length and stop_sequence to generate_stream
-            async for token in self.kobold_client.generate_stream(
+            async for token in self.llm_client.generate_stream(
                 prompt,
                 max_length=current_max_length,
                 stop_sequence=stop_sequence # Pass the determined stop sequence
@@ -585,7 +603,7 @@ class MainWindow(QMainWindow):
             current_max_length = settings.get("max_length_idea", DEFAULT_SETTINGS["max_length_idea"])
 
             # Collect full output from the stream
-            async for token in self.kobold_client.generate_stream(
+            async for token in self.llm_client.generate_stream(
                 prompt,
                 max_length=current_max_length,
                 stop_sequence=stop_sequence
@@ -780,7 +798,7 @@ class MainWindow(QMainWindow):
                         if selected_item_key == "all":
                             # --- "All" Item: Always Stream ---
                             self._append_to_output(separator)
-                            async for token in self.kobold_client.generate_stream(
+                            async for token in self.llm_client.generate_stream(
                                 final_prompt,
                                 max_length=current_max_length,
                                 stop_sequence=stop_sequence # Use determined stop sequence even for 'all'
@@ -793,7 +811,7 @@ class MainWindow(QMainWindow):
                         elif not fast_mode_enabled:
                             # --- Safe Mode (Collect, Filter, Append) ---
                             full_output = ""
-                            async for token in self.kobold_client.generate_stream(
+                            async for token in self.llm_client.generate_stream(
                                 final_prompt,
                                 max_length=current_max_length,
                                 stop_sequence=stop_sequence
@@ -819,7 +837,7 @@ class MainWindow(QMainWindow):
                         else:
                             # --- Fast Mode (Stream directly) ---
                             self._append_to_output(separator)
-                            async for token in self.kobold_client.generate_stream(
+                            async for token in self.llm_client.generate_stream(
                                 final_prompt,
                                 max_length=current_max_length,
                                 stop_sequence=stop_sequence
@@ -833,7 +851,7 @@ class MainWindow(QMainWindow):
                     else:
                         # --- Generate Mode Execution (Stream directly) ---
                         self._append_to_output(separator)
-                        async for token in self.kobold_client.generate_stream(
+                        async for token in self.llm_client.generate_stream(
                             final_prompt,
                             max_length=current_max_length,
                             stop_sequence=stop_sequence # Will be None for generate mode
@@ -918,10 +936,10 @@ class MainWindow(QMainWindow):
         print("Cleaning up...")
         if self.generation_status != "idle":
             self._stop_current_generation() # Attempt to stop gracefully
-        print("Requesting Kobold client close...")
+        print("Requesting LLM client close...")
         try:
-            await self.kobold_client.close() # Await the async close
-            print("Kobold client closed.")
+            await self.llm_client.close() # Await the async close
+            print("LLM client closed.")
         except Exception as e:
             print(f"Error during client close: {e}")
 

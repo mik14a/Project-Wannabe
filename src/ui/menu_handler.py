@@ -645,10 +645,10 @@ class MenuHandler:
     def _create_settings_menu(self, menu_bar: QMenuBar):
         # This should ideally be handled by main_window itself or another controller
         settings_menu = menu_bar.addMenu("設定(&S)")
-        if hasattr(self.main_window, '_open_kobold_config_dialog') and hasattr(self.main_window, '_open_gen_params_dialog'):
-            kobold_config_action = settings_menu.addAction("KoboldCpp 設定...")
+        if hasattr(self.main_window, '_open_client_config_dialog') and hasattr(self.main_window, '_open_gen_params_dialog'):
+            client_config_action = settings_menu.addAction("クライアント設定...")
             gen_params_action = settings_menu.addAction("生成パラメータ設定...")
-            kobold_config_action.triggered.connect(self.main_window._open_kobold_config_dialog)
+            client_config_action.triggered.connect(self.main_window._open_client_config_dialog)
             gen_params_action.triggered.connect(self.main_window._open_gen_params_dialog)
         else:
              placeholder = settings_menu.addAction("(設定機能未接続)")

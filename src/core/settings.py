@@ -4,7 +4,9 @@ from typing import Any, Dict, List
 
 CONFIG_FILE = "config.json"
 DEFAULT_SETTINGS = {
+    "client_type": "kobold",
     "kobold_port": 5001,
+    "openai_compatible_port": 1234,
     # "max_length": 250, # Removed old setting
     "max_length_idea": 500, # Default for idea mode
     "max_length_generate": 250, # Default for generate mode

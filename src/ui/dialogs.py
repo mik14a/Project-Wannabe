@@ -5,22 +5,41 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinB
 from PySide6.QtCore import Slot
 from src.core.settings import load_settings, save_settings, DEFAULT_SETTINGS
 
-class KoboldConfigDialog(QDialog):
-    """Dialog for configuring KoboldCpp connection settings."""
+class ClientConfigDialog(QDialog):
+    """Dialog for configuring LLM client connection settings."""
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("KoboldCpp 設定")
+        self.setWindowTitle("クライアント設定")
 
         self.current_settings = load_settings()
 
         layout = QVBoxLayout(self)
 
-        # Port setting
+        # Client type settings
+        client_type_layout = QHBoxLayout()
+        client_type_label = QLabel("LLM Client Type:")
+        self.client_type_combo = QComboBox()
+        self.client_type_combo.addItem("KoboldCpp", "kobold")
+        self.client_type_combo.addItem("OpenAI Compatible", "openai_compatible")
+        client_type_layout.addWidget(client_type_label)
+        client_type_layout.addWidget(self.client_type_combo)
+        layout.addLayout(client_type_layout)
+
+        # Set initial selection based on current settings
+        current_client_type = self.current_settings.get("client_type", "kobold")
+        index = self.client_type_combo.findData(current_client_type)
+        if index != -1:
+            self.client_type_combo.setCurrentIndex(index)
+
+        # Port Settings
         port_layout = QHBoxLayout()
-        port_label = QLabel("KoboldCpp API Port:")
+        port_label = QLabel("LLM Client API Port:")
         self.port_spinbox = QSpinBox()
         self.port_spinbox.setRange(1, 65535)
-        self.port_spinbox.setValue(self.current_settings.get("kobold_port", 5001))
+        if self.current_settings["client_type"] == "kobold":
+            self.port_spinbox.setValue(self.current_settings.get("kobold_port", 5001))
+        elif self.current_settings["client_type"] == "openai_compatible":
+            self.port_spinbox.setValue(self.current_settings.get("openai_compatible_port", 1234))
         port_layout.addWidget(port_label)
         port_layout.addWidget(self.port_spinbox)
         layout.addLayout(port_layout)
@@ -33,14 +52,18 @@ class KoboldConfigDialog(QDialog):
 
     def accept(self):
         """Saves the settings when OK is clicked."""
-        self.current_settings["kobold_port"] = self.port_spinbox.value()
+        self.current_settings["client_type"] = self.client_type_combo.currentData()
+        if self.current_settings["client_type"] == "kobold":
+            self.current_settings["kobold_port"] = self.port_spinbox.value()
+        elif self.current_settings["client_type"] == "openai_compatible":
+            self.current_settings["openai_compatible_port"] = self.port_spinbox.value()
         save_settings(self.current_settings)
         super().accept()
 
     @staticmethod
     def show_dialog(parent: QWidget | None = None) -> bool:
         """Creates and shows the dialog, returning True if accepted."""
-        dialog = KoboldConfigDialog(parent)
+        dialog = ClientConfigDialog(parent)
         return dialog.exec() == QDialog.Accepted
 
 class GenerationParamsDialog(QDialog):
@@ -297,13 +320,13 @@ if __name__ == '__main__':
 
     app = QApplication(sys.argv)
 
-    # Test KoboldConfigDialog
-    print("Showing Kobold Config Dialog...")
-    if KoboldConfigDialog.show_dialog():
-        print("Kobold Config Dialog Accepted. Settings potentially saved.")
+    # Test ClientConfigDialog
+    print("Showing Client Config Dialog...")
+    if ClientConfigDialog.show_dialog():
+        print("Client Config Dialog Accepted. Settings potentially saved.")
         print("Current settings:", load_settings())
     else:
-        print("Kobold Config Dialog Cancelled.")
+        print("Client Config Dialog Cancelled.")
 
     # Test GenerationParamsDialog
     print("\nShowing Generation Params Dialog...")
