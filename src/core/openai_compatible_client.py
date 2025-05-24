@@ -20,8 +20,11 @@ class OpenAICompatibleClient:
 
     def _get_api_url(self) -> str:
         """Constructs the API URL from settings."""
-        port = self._current_settings.get("openai_compatible_port", 1234)
-        return f"http://127.0.0.1:{port}/v1/completions"
+        base_url = self._current_settings.get("base_url", "127.0.0.1:5001")
+        # Handle URL prefix if not present
+        if not base_url.startswith(("http://", "https://")):
+            base_url = f"http://{base_url}"
+        return f"{base_url}/v1/completions"
 
     def reload_settings(self):
         """Reloads settings from the config file."""

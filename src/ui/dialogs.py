@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
                                QDoubleSpinBox, QTextEdit, QFormLayout, QComboBox,
                                QDialogButtonBox, QWidget, QGroupBox, QRadioButton,
-                               QSpacerItem, QSizePolicy)
+                               QSpacerItem, QSizePolicy, QLineEdit)
 from PySide6.QtCore import Slot
 from src.core.settings import load_settings, save_settings, DEFAULT_SETTINGS
 
@@ -15,7 +15,7 @@ class ClientConfigDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        # Client type settings
+        # Client type selection
         client_type_layout = QHBoxLayout()
         client_type_label = QLabel("LLM Client Type:")
         self.client_type_combo = QComboBox()
@@ -31,18 +31,17 @@ class ClientConfigDialog(QDialog):
         if index != -1:
             self.client_type_combo.setCurrentIndex(index)
 
-        # Port Settings
-        port_layout = QHBoxLayout()
-        port_label = QLabel("LLM Client API Port:")
-        self.port_spinbox = QSpinBox()
-        self.port_spinbox.setRange(1, 65535)
-        if self.current_settings["client_type"] == "kobold":
-            self.port_spinbox.setValue(self.current_settings.get("kobold_port", 5001))
-        elif self.current_settings["client_type"] == "openai_compatible":
-            self.port_spinbox.setValue(self.current_settings.get("openai_compatible_port", 1234))
-        port_layout.addWidget(port_label)
-        port_layout.addWidget(self.port_spinbox)
-        layout.addLayout(port_layout)
+        # Base URL configuration
+        base_url_layout = QHBoxLayout()
+        base_url_label = QLabel("Base URL:")
+        self.base_url_edit = QLineEdit()
+        self.base_url_edit.setText(self.current_settings.get("base_url", "127.0.0.1:5001"))
+        base_url_layout.addWidget(base_url_label)
+        base_url_layout.addWidget(self.base_url_edit)
+        layout.addLayout(base_url_layout)
+
+        # Client type change event handler
+        self.client_type_combo.currentIndexChanged.connect(self._on_client_type_changed)
 
         # Dialog buttons
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -50,13 +49,19 @@ class ClientConfigDialog(QDialog):
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
 
+    def _on_client_type_changed(self, index: int):
+        """Handle client type change event and reset base URL to default"""
+        client_type = self.client_type_combo.currentData()
+        # Reset base URL to default based on client type
+        if client_type == "kobold":
+            self.base_url_edit.setText("127.0.0.1:5001")
+        elif client_type == "openai_compatible":
+            self.base_url_edit.setText("127.0.0.1:1234")
+
     def accept(self):
         """Saves the settings when OK is clicked."""
         self.current_settings["client_type"] = self.client_type_combo.currentData()
-        if self.current_settings["client_type"] == "kobold":
-            self.current_settings["kobold_port"] = self.port_spinbox.value()
-        elif self.current_settings["client_type"] == "openai_compatible":
-            self.current_settings["openai_compatible_port"] = self.port_spinbox.value()
+        self.current_settings["base_url"] = self.base_url_edit.text()
         save_settings(self.current_settings)
         super().accept()
 
